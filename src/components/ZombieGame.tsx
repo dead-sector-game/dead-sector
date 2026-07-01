@@ -410,8 +410,11 @@ export function ZombieGame() {
       const len = Math.hypot(mx, my);
       if (len > 0) { mx /= len; my /= len; }
       const sp = s.player.speed * dt;
+      // move X then resolve, then Y then resolve, for smooth wall sliding
       s.player.x = Math.max(20, Math.min(MAP_W - 20, s.player.x + mx * sp));
+      (s as any)._resolveObstacles(s.player, s.player.r);
       s.player.y = Math.max(20, Math.min(MAP_H - 20, s.player.y + my * sp));
+      (s as any)._resolveObstacles(s.player, s.player.r);
 
       // world mouse
       s.mouse.worldX = s.mouse.x + s.camera.x;
