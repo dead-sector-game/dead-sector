@@ -441,13 +441,23 @@ export function ZombieGame() {
         b.y += b.vy * dt;
         b.life -= dt;
         let hit = false;
-        for (let j = s.zombies.length - 1; j >= 0; j--) {
+        // obstacle hit
+        if ((s as any)._bulletHitsObstacle(b.x, b.y)) {
+          hit = true;
+          for (let k = 0; k < 4; k++) {
+            const a = Math.random() * Math.PI * 2;
+            s.particles.push({
+              x: b.x, y: b.y, vx: Math.cos(a) * 60, vy: Math.sin(a) * 60,
+              life: 0.25, maxLife: 0.25, color: "#888", size: 2 + Math.random() * 2,
+            });
+          }
+        }
+        if (!hit) for (let j = s.zombies.length - 1; j >= 0; j--) {
           const z = s.zombies[j];
           const dx = z.x - b.x, dy = z.y - b.y;
           if (dx * dx + dy * dy < z.radius * z.radius) {
             z.hp -= b.dmg;
             hit = true;
-            // impact particles
             for (let k = 0; k < 5; k++) {
               const a = Math.random() * Math.PI * 2;
               s.particles.push({
