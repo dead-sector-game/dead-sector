@@ -84,6 +84,7 @@ export function ZombieGame() {
       { x: MAP_W / 2, y: MAP_H / 2 - 500 },
       { x: MAP_W / 2, y: MAP_H / 2 + 500 },
     ],
+    obstacles: [] as { x: number; y: number; w: number; h: number; type: "rock" | "crate" | "fence" | "barrel" }[],
     messageUntil: 0,
     message: "",
     started: false,
