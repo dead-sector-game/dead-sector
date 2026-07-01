@@ -84,6 +84,7 @@ export function ZombieGame() {
       { x: MAP_W / 2, y: MAP_H / 2 - 500 },
       { x: MAP_W / 2, y: MAP_H / 2 + 500 },
     ],
+    obstacles: [] as { x: number; y: number; w: number; h: number; type: "rock" | "crate" | "fence" | "barrel" }[],
     messageUntil: 0,
     message: "",
     started: false,
@@ -96,6 +97,92 @@ export function ZombieGame() {
     const canvas = canvasRef.current!;
     const ctx = canvas.getContext("2d")!;
     const s = stateRef.current;
+
+    // Generate obstacles once
+    if (s.obstacles.length === 0) {
+      const cx = MAP_W / 2, cy = MAP_H / 2;
+      const rects: typeof s.obstacles = [
+        // central sandbag pit around spawn (leave gaps)
+        { x: cx - 90, y: cy - 140, w: 180, h: 18, type: "fence" },
+        { x: cx - 140, y: cy + 122, w: 90, h: 18, type: "fence" },
+        { x: cx + 50, y: cy + 122, w: 90, h: 18, type: "fence" },
+        { x: cx - 158, y: cy - 90, w: 18, h: 180, type: "fence" },
+        { x: cx + 140, y: cy - 90, w: 18, h: 180, type: "fence" },
+        // crate stacks near buy stations
+        { x: cx - 380, y: cy - 240, w: 46, h: 46, type: "crate" },
+        { x: cx - 340, y: cy - 200, w: 40, h: 40, type: "crate" },
+        { x: cx + 340, y: cy - 240, w: 46, h: 46, type: "crate" },
+        { x: cx + 320, y: cy + 220, w: 44, h: 44, type: "crate" },
+        { x: cx - 360, y: cy + 240, w: 50, h: 50, type: "crate" },
+        // rocks scattered
+        { x: cx - 620, y: cy - 100, w: 80, h: 70, type: "rock" },
+        { x: cx + 560, y: cy + 80, w: 90, h: 80, type: "rock" },
+        { x: cx - 200, y: cy - 640, w: 70, h: 60, type: "rock" },
+        { x: cx + 220, y: cy + 600, w: 85, h: 70, type: "rock" },
+        { x: cx - 700, y: cy + 500, w: 100, h: 90, type: "rock" },
+        { x: cx + 680, y: cy - 520, w: 95, h: 85, type: "rock" },
+        { x: cx - 500, y: cy + 640, w: 70, h: 60, type: "rock" },
+        { x: cx + 500, y: cy - 700, w: 80, h: 70, type: "rock" },
+        // long fences forming lanes
+        { x: cx - 800, y: cy - 400, w: 200, h: 16, type: "fence" },
+        { x: cx + 600, y: cy - 400, w: 200, h: 16, type: "fence" },
+        { x: cx - 800, y: cy + 400, w: 200, h: 16, type: "fence" },
+        { x: cx + 600, y: cy + 400, w: 200, h: 16, type: "fence" },
+        { x: cx - 900, y: cy - 200, w: 16, h: 200, type: "fence" },
+        { x: cx + 884, y: cy - 200, w: 16, h: 200, type: "fence" },
+        // barrels
+        { x: cx - 450, y: cy - 500, w: 28, h: 28, type: "barrel" },
+        { x: cx + 450, y: cy - 480, w: 28, h: 28, type: "barrel" },
+        { x: cx - 480, y: cy + 460, w: 28, h: 28, type: "barrel" },
+        { x: cx + 470, y: cy + 490, w: 28, h: 28, type: "barrel" },
+        { x: cx - 250, y: cy + 340, w: 28, h: 28, type: "barrel" },
+        { x: cx + 260, y: cy - 340, w: 28, h: 28, type: "barrel" },
+        // outer wall crates
+        { x: cx - 850, y: cy + 750, w: 60, h: 60, type: "crate" },
+        { x: cx + 820, y: cy - 780, w: 60, h: 60, type: "crate" },
+        { x: cx - 780, y: cy - 800, w: 55, h: 55, type: "crate" },
+        { x: cx + 770, y: cy + 780, w: 55, h: 55, type: "crate" },
+      ];
+      s.obstacles = rects;
+    }
+
+    // Collision helpers
+    const circleRectOverlap = (cx: number, cy: number, r: number, rx: number, ry: number, rw: number, rh: number) => {
+      const closestX = Math.max(rx, Math.min(cx, rx + rw));
+      const closestY = Math.max(ry, Math.min(cy, ry + rh));
+      const dx = cx - closestX, dy = cy - closestY;
+      return dx * dx + dy * dy < r * r;
+    };
+    const resolveCircleAgainstObstacles = (pos: { x: number; y: number }, r: number) => {
+      for (const o of s.obstacles) {
+        if (!circleRectOverlap(pos.x, pos.y, r, o.x, o.y, o.w, o.h)) continue;
+        const closestX = Math.max(o.x, Math.min(pos.x, o.x + o.w));
+        const closestY = Math.max(o.y, Math.min(pos.y, o.y + o.h));
+        let dx = pos.x - closestX, dy = pos.y - closestY;
+        let dist = Math.hypot(dx, dy);
+        if (dist === 0) {
+          // Push out toward nearest edge
+          const leftD = pos.x - o.x, rightD = (o.x + o.w) - pos.x;
+          const topD = pos.y - o.y, botD = (o.y + o.h) - pos.y;
+          const m = Math.min(leftD, rightD, topD, botD);
+          if (m === leftD) { pos.x = o.x - r; }
+          else if (m === rightD) { pos.x = o.x + o.w + r; }
+          else if (m === topD) { pos.y = o.y - r; }
+          else { pos.y = o.y + o.h + r; }
+          continue;
+        }
+        const push = r - dist;
+        pos.x += (dx / dist) * push;
+        pos.y += (dy / dist) * push;
+      }
+    };
+    (s as any)._resolveObstacles = resolveCircleAgainstObstacles;
+    (s as any)._bulletHitsObstacle = (bx: number, by: number) => {
+      for (const o of s.obstacles) {
+        if (bx >= o.x && bx <= o.x + o.w && by >= o.y && by <= o.y + o.h) return true;
+      }
+      return false;
+    };
 
     const resize = () => {
       canvas.width = window.innerWidth;
@@ -323,8 +410,11 @@ export function ZombieGame() {
       const len = Math.hypot(mx, my);
       if (len > 0) { mx /= len; my /= len; }
       const sp = s.player.speed * dt;
+      // move X then resolve, then Y then resolve, for smooth wall sliding
       s.player.x = Math.max(20, Math.min(MAP_W - 20, s.player.x + mx * sp));
+      (s as any)._resolveObstacles(s.player, s.player.r);
       s.player.y = Math.max(20, Math.min(MAP_H - 20, s.player.y + my * sp));
+      (s as any)._resolveObstacles(s.player, s.player.r);
 
       // world mouse
       s.mouse.worldX = s.mouse.x + s.camera.x;
@@ -351,13 +441,23 @@ export function ZombieGame() {
         b.y += b.vy * dt;
         b.life -= dt;
         let hit = false;
-        for (let j = s.zombies.length - 1; j >= 0; j--) {
+        // obstacle hit
+        if ((s as any)._bulletHitsObstacle(b.x, b.y)) {
+          hit = true;
+          for (let k = 0; k < 4; k++) {
+            const a = Math.random() * Math.PI * 2;
+            s.particles.push({
+              x: b.x, y: b.y, vx: Math.cos(a) * 60, vy: Math.sin(a) * 60,
+              life: 0.25, maxLife: 0.25, color: "#888", size: 2 + Math.random() * 2,
+            });
+          }
+        }
+        if (!hit) for (let j = s.zombies.length - 1; j >= 0; j--) {
           const z = s.zombies[j];
           const dx = z.x - b.x, dy = z.y - b.y;
           if (dx * dx + dy * dy < z.radius * z.radius) {
             z.hp -= b.dmg;
             hit = true;
-            // impact particles
             for (let k = 0; k < 5; k++) {
               const a = Math.random() * Math.PI * 2;
               s.particles.push({
@@ -382,7 +482,9 @@ export function ZombieGame() {
         const dx = s.player.x - z.x, dy = s.player.y - z.y;
         const d = Math.hypot(dx, dy) || 1;
         z.x += (dx / d) * z.speed * dt;
+        (s as any)._resolveObstacles(z, z.radius);
         z.y += (dy / d) * z.speed * dt;
+        (s as any)._resolveObstacles(z, z.radius);
         if (d < z.radius + s.player.r) {
           damagePlayer(z.type === "brute" ? 25 : z.type === "runner" ? 12 : 15);
         }
@@ -573,6 +675,77 @@ export function ZombieGame() {
       ctx.restore();
     }
 
+    function drawObstacles() {
+      for (const o of s.obstacles) {
+        const sx = o.x - s.camera.x, sy = o.y - s.camera.y;
+        if (sx + o.w < -20 || sy + o.h < -20 || sx > canvas.width + 20 || sy > canvas.height + 20) continue;
+        if (o.type === "rock") {
+          ctx.fillStyle = "#3a3a38";
+          ctx.strokeStyle = "#1a1a18";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          const cx = sx + o.w / 2, cy = sy + o.h / 2;
+          const rw = o.w / 2, rh = o.h / 2;
+          ctx.moveTo(cx - rw, cy);
+          ctx.lineTo(cx - rw * 0.6, cy - rh);
+          ctx.lineTo(cx + rw * 0.5, cy - rh * 0.9);
+          ctx.lineTo(cx + rw, cy - rh * 0.2);
+          ctx.lineTo(cx + rw * 0.7, cy + rh);
+          ctx.lineTo(cx - rw * 0.5, cy + rh * 0.9);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = "#4a4a48";
+          ctx.beginPath();
+          ctx.arc(cx - rw * 0.2, cy - rh * 0.2, Math.min(rw, rh) * 0.3, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (o.type === "crate") {
+          ctx.fillStyle = "#6b4a22";
+          ctx.fillRect(sx, sy, o.w, o.h);
+          ctx.strokeStyle = "#2a1a08";
+          ctx.lineWidth = 3;
+          ctx.strokeRect(sx, sy, o.w, o.h);
+          ctx.beginPath();
+          ctx.moveTo(sx, sy); ctx.lineTo(sx + o.w, sy + o.h);
+          ctx.moveTo(sx + o.w, sy); ctx.lineTo(sx, sy + o.h);
+          ctx.strokeStyle = "#4a2f10";
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else if (o.type === "fence") {
+          // sandbag wall
+          ctx.fillStyle = "#5a4a2a";
+          ctx.strokeStyle = "#2a1f0a";
+          ctx.lineWidth = 1;
+          const bagSize = 18;
+          if (o.w >= o.h) {
+            for (let i = 0; i < Math.floor(o.w / bagSize); i++) {
+              ctx.beginPath();
+              ctx.ellipse(sx + i * bagSize + bagSize / 2, sy + o.h / 2, bagSize / 2 - 1, o.h / 2, 0, 0, Math.PI * 2);
+              ctx.fill(); ctx.stroke();
+            }
+          } else {
+            for (let i = 0; i < Math.floor(o.h / bagSize); i++) {
+              ctx.beginPath();
+              ctx.ellipse(sx + o.w / 2, sy + i * bagSize + bagSize / 2, o.w / 2, bagSize / 2 - 1, 0, 0, Math.PI * 2);
+              ctx.fill(); ctx.stroke();
+            }
+          }
+        } else if (o.type === "barrel") {
+          const cx = sx + o.w / 2, cy = sy + o.h / 2, r = o.w / 2;
+          ctx.fillStyle = "#7a2a1a";
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = "#2a0a05";
+          ctx.lineWidth = 2; ctx.stroke();
+          ctx.strokeStyle = "#4a1a0a";
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(cx, cy, r * 0.7, 0, Math.PI * 2);
+          ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
+          ctx.stroke();
+        }
+      }
+    }
+
     function drawZombies() {
       for (const z of s.zombies) {
         const sx = z.x - s.camera.x, sy = z.y - s.camera.y;
@@ -662,6 +835,7 @@ export function ZombieGame() {
       drawMapBounds();
       drawBuyStations();
       drawPickups();
+      drawObstacles();
       drawParticles();
       drawZombies();
       drawPlayer();
