@@ -835,6 +835,7 @@ export function ZombieGame() {
       drawMapBounds();
       drawBuyStations();
       drawPickups();
+      drawObstacles();
       drawParticles();
       drawZombies();
       drawPlayer();
