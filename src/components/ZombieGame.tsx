@@ -482,7 +482,9 @@ export function ZombieGame() {
         const dx = s.player.x - z.x, dy = s.player.y - z.y;
         const d = Math.hypot(dx, dy) || 1;
         z.x += (dx / d) * z.speed * dt;
+        (s as any)._resolveObstacles(z, z.radius);
         z.y += (dy / d) * z.speed * dt;
+        (s as any)._resolveObstacles(z, z.radius);
         if (d < z.radius + s.player.r) {
           damagePlayer(z.type === "brute" ? 25 : z.type === "runner" ? 12 : 15);
         }
