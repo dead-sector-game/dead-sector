@@ -1070,22 +1070,160 @@ export function ZombieGame() {
       }
     }
 
+    function drawTotems() {
+      const now = performance.now();
+      for (const t of s.totems) {
+        if (!t.active) continue;
+        const sx = t.x - s.camera.x, sy = t.y - s.camera.y;
+        if (sx < -80 || sy < -120 || sx > canvas.width + 80 || sy > canvas.height + 120) continue;
+        const pulse = 0.6 + Math.sin(now / 260) * 0.4;
+        // glow ring on ground (kill radius)
+        ctx.strokeStyle = `rgba(180,80,255,${0.15 + pulse * 0.15})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(sx, sy, 220, 0, Math.PI * 2); ctx.stroke();
+        // shadow base
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.beginPath(); ctx.ellipse(sx, sy + 34, 26, 8, 0, 0, Math.PI * 2); ctx.fill();
+        // pole body
+        ctx.fillStyle = "#2a1a10";
+        ctx.fillRect(sx - 14, sy - 60, 28, 90);
+        ctx.strokeStyle = "#0a0503"; ctx.lineWidth = 2;
+        ctx.strokeRect(sx - 14, sy - 60, 28, 90);
+        // carvings
+        ctx.fillStyle = "#5a2a10";
+        ctx.fillRect(sx - 10, sy - 50, 20, 14);
+        ctx.fillRect(sx - 10, sy - 20, 20, 14);
+        ctx.fillRect(sx - 10, sy + 10, 20, 14);
+        // glowing eyes
+        ctx.fillStyle = `rgba(200,100,255,${pulse})`;
+        ctx.beginPath(); ctx.arc(sx - 5, sy - 43, 2.4, 0, Math.PI * 2);
+        ctx.arc(sx + 5, sy - 43, 2.4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,80,80,${pulse})`;
+        ctx.beginPath(); ctx.arc(sx - 5, sy - 13, 2.4, 0, Math.PI * 2);
+        ctx.arc(sx + 5, sy - 13, 2.4, 0, Math.PI * 2); ctx.fill();
+        // counter above
+        ctx.fillStyle = "#000"; ctx.fillRect(sx - 30, sy - 88, 60, 18);
+        ctx.strokeStyle = "#b060ff"; ctx.lineWidth = 1;
+        ctx.strokeRect(sx - 30, sy - 88, 60, 18);
+        ctx.fillStyle = "#e0c0ff";
+        ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
+        ctx.fillText(`${t.kills}/${t.need}`, sx, sy - 74);
+      }
+    }
+
+    function drawLava() {
+      const t = performance.now() / 400;
+      for (const l of s.lava) {
+        const sx = l.x - s.camera.x, sy = l.y - s.camera.y;
+        if (sx + l.w < 0 || sy + l.h < 0 || sx > canvas.width || sy > canvas.height) continue;
+        // outer glow
+        ctx.fillStyle = "#3a0a02";
+        ctx.fillRect(sx - 4, sy - 4, l.w + 8, l.h + 8);
+        // lava base
+        const grd = ctx.createLinearGradient(sx, sy, sx, sy + l.h);
+        grd.addColorStop(0, "#ff5a10");
+        grd.addColorStop(1, "#8a1a02");
+        ctx.fillStyle = grd;
+        ctx.fillRect(sx, sy, l.w, l.h);
+        // bubbling spots
+        ctx.fillStyle = "rgba(255,220,80,0.7)";
+        for (let i = 0; i < 4; i++) {
+          const bx = sx + ((i * 53 + t * 20) % l.w);
+          const by = sy + ((i * 37 + t * 15) % l.h);
+          const rr = 3 + Math.sin(t + i) * 2;
+          ctx.beginPath(); ctx.arc(bx, by, Math.abs(rr), 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+
+    function drawBoss() {
+      if (!s.boss) return;
+      const bs = s.boss;
+      const sx = bs.x - s.camera.x, sy = bs.y - s.camera.y;
+      const pulse = 0.7 + Math.sin(performance.now() / 200) * 0.3;
+      // aura
+      const grd = ctx.createRadialGradient(sx, sy, bs.radius * 0.5, sx, sy, bs.radius * 2.2);
+      grd.addColorStop(0, `rgba(255,60,20,${0.35 * pulse})`);
+      grd.addColorStop(1, "rgba(255,60,20,0)");
+      ctx.fillStyle = grd;
+      ctx.fillRect(sx - bs.radius * 2.2, sy - bs.radius * 2.2, bs.radius * 4.4, bs.radius * 4.4);
+      // body
+      ctx.fillStyle = "#1a0505";
+      ctx.beginPath(); ctx.arc(sx, sy, bs.radius, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#c93030"; ctx.lineWidth = 4; ctx.stroke();
+      // spikes
+      const now = performance.now() / 500;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + now;
+        ctx.fillStyle = "#5a0a0a";
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(a) * bs.radius, sy + Math.sin(a) * bs.radius);
+        ctx.lineTo(sx + Math.cos(a + 0.2) * (bs.radius + 12), sy + Math.sin(a + 0.2) * (bs.radius + 12));
+        ctx.lineTo(sx + Math.cos(a + 0.4) * bs.radius, sy + Math.sin(a + 0.4) * bs.radius);
+        ctx.closePath(); ctx.fill();
+      }
+      // eyes
+      ctx.fillStyle = `rgba(255,220,80,${pulse})`;
+      const ang = Math.atan2(s.player.y - bs.y, s.player.x - bs.x);
+      const ex = Math.cos(ang) * (bs.radius * 0.4);
+      const ey = Math.sin(ang) * (bs.radius * 0.4);
+      const perpX = -Math.sin(ang) * 10, perpY = Math.cos(ang) * 10;
+      ctx.beginPath();
+      ctx.arc(sx + ex + perpX, sy + ey + perpY, 4, 0, Math.PI * 2);
+      ctx.arc(sx + ex - perpX, sy + ey - perpY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      // hp bar (large, top of screen)
+      const barW = Math.min(600, canvas.width - 200);
+      const barX = (canvas.width - barW) / 2;
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(barX - 4, 46, barW + 8, 22);
+      ctx.fillStyle = "#3a0505";
+      ctx.fillRect(barX, 50, barW, 14);
+      ctx.fillStyle = "#c93030";
+      ctx.fillRect(barX, 50, barW * (bs.hp / bs.maxHp), 14);
+      ctx.fillStyle = "#e0c090"; ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
+      ctx.fillText("THE HARBINGER", canvas.width / 2, 44);
+    }
+
+    function drawBossBullets() {
+      for (const b of s.bossBullets) {
+        const sx = b.x - s.camera.x, sy = b.y - s.camera.y;
+        ctx.fillStyle = "#ff4020";
+        ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,180,80,0.6)";
+        ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    function drawTransitionFlash() {
+      if (s.transitionFlash > 0.01) {
+        ctx.fillStyle = `rgba(255,255,255,${Math.min(1, s.transitionFlash)})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
     function render() {
-      ctx.fillStyle = "#0a0d0a";
+      ctx.fillStyle = s.bossMode ? "#1a0505" : "#0a0d0a";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawGrid();
       drawMapBounds();
-      drawBuyStations();
+      if (s.bossMode) drawLava();
+      if (!s.bossMode) drawBuyStations();
       drawPickups();
       drawObstacles();
+      drawTotems();
       drawParticles();
       drawZombies();
+      drawBoss();
+      drawBossBullets();
       drawPlayer();
       drawBullets();
       drawFog();
       drawHitFlash();
+      drawTransitionFlash();
       drawMessage();
     }
+
 
     let raf = 0;
     const loop = (t: number) => {
