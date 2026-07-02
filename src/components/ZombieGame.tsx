@@ -864,6 +864,8 @@ export function ZombieGame() {
       window.removeEventListener("resize", resize);
       window.removeEventListener("keydown", kd);
       window.removeEventListener("keyup", ku);
+      window.removeEventListener("mouseup", mu);
+      window.removeEventListener("blur", mu);
     };
   }, []);
 
