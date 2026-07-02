@@ -205,13 +205,15 @@ export function ZombieGame() {
       s.mouse.y = e.clientY - rect.top;
     };
     const md = () => {
-      s.mouse.down = true;
       if (!s.started) {
         s.started = true;
+        s.mouse.down = false; // don't fire on the click that starts the game
         setUiState((u) => ({ ...u, started: true }));
         setShowHelp(false);
         startRound(1);
+        return;
       }
+      s.mouse.down = true;
     };
     const mu = () => (s.mouse.down = false);
 
@@ -219,7 +221,9 @@ export function ZombieGame() {
     window.addEventListener("keyup", ku);
     canvas.addEventListener("mousemove", mm);
     canvas.addEventListener("mousedown", md);
-    canvas.addEventListener("mouseup", mu);
+    // bind mouseup + blur to window so releasing outside canvas still stops firing
+    window.addEventListener("mouseup", mu);
+    window.addEventListener("blur", mu);
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
     function setMessage(m: string, ms = 1800) {
