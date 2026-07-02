@@ -86,6 +86,15 @@ export function ZombieGame() {
       { x: MAP_W / 2, y: MAP_H / 2 + 500 },
     ],
     obstacles: [] as { x: number; y: number; w: number; h: number; type: "rock" | "crate" | "fence" | "barrel" }[],
+    totems: [] as { x: number; y: number; kills: number; need: number; active: boolean; id: string }[],
+    totemPhase: 0 as 0 | 1 | 2 | 3, // 0=corners, 1=center, 2=transitioning, 3=boss
+    transitionFlash: 0,
+    bossMode: false,
+    boss: null as null | { x: number; y: number; hp: number; maxHp: number; speed: number; radius: number; lastShot: number },
+    bossBullets: [] as { x: number; y: number; vx: number; vy: number; life: number; dmg: number }[],
+    lava: [] as { x: number; y: number; w: number; h: number }[],
+    lastLavaDmg: 0,
+    won: false,
     messageUntil: 0,
     message: "",
     started: false,
@@ -145,6 +154,16 @@ export function ZombieGame() {
         { x: cx + 770, y: cy + 780, w: 55, h: 55, type: "crate" },
       ];
       s.obstacles = rects;
+    }
+
+    if (s.totems.length === 0) {
+      const cx = MAP_W / 2, cy = MAP_H / 2;
+      s.totems = [
+        { x: cx - 720, y: cy - 720, kills: 0, need: 20, active: true, id: "NW" },
+        { x: cx + 720, y: cy - 720, kills: 0, need: 20, active: true, id: "NE" },
+        { x: cx - 720, y: cy + 720, kills: 0, need: 20, active: true, id: "SW" },
+        { x: cx + 720, y: cy + 720, kills: 0, need: 20, active: true, id: "SE" },
+      ];
     }
 
     // Collision helpers
@@ -408,7 +427,85 @@ export function ZombieGame() {
       if (Math.random() < 0.06) {
         s.pickups.push({ x: z.x, y: z.y, kind: Math.random() < 0.5 ? "ammo" : "health", life: 15 });
       }
+      // easter egg: totem progression
+      for (const t of s.totems) {
+        if (!t.active) continue;
+        const dx = t.x - z.x, dy = t.y - z.y;
+        if (dx * dx + dy * dy < 220 * 220) {
+          t.kills++;
+          if (t.kills >= t.need) {
+            t.active = false;
+            setMessage(`TOTEM ${t.id} AWAKENED`);
+            if (s.totemPhase === 0 && s.totems.every((tt) => !tt.active)) {
+              s.totemPhase = 1;
+              s.totems.push({ x: MAP_W / 2, y: MAP_H / 2, kills: 0, need: 25, active: true, id: "CORE" });
+              setMessage("THE CORE CALLS...", 2600);
+            } else if (s.totemPhase === 1) {
+              s.totemPhase = 2;
+              s.transitionFlash = 1;
+              // insta-kill all zombies
+              for (const zz of s.zombies) {
+                for (let i = 0; i < 20; i++) {
+                  const a = Math.random() * Math.PI * 2;
+                  s.particles.push({ x: zz.x, y: zz.y, vx: Math.cos(a) * 240, vy: Math.sin(a) * 240, life: 0.7, maxLife: 0.7, color: "#ffffff", size: 5 });
+                }
+              }
+              s.zombies.length = 0;
+              s.zombiesAlive = 0;
+              s.zombiesToSpawn = -1;
+              setMessage("ASCEND", 2200);
+              setTimeout(() => enterBossMap(), 1600);
+            }
+          }
+          break;
+        }
+      }
       setUiState((u) => ({ ...u, points: s.points, zombiesLeft: s.zombiesToSpawn + s.zombiesAlive }));
+    }
+
+    function enterBossMap() {
+      const cx = MAP_W / 2, cy = MAP_H / 2;
+      s.bossMode = true;
+      s.totemPhase = 3;
+      s.zombies.length = 0;
+      s.bullets.length = 0;
+      s.pickups.length = 0;
+      s.zombiesAlive = 0;
+      s.zombiesToSpawn = -1;
+      // rock-only obstacles scattered around lava arena
+      s.obstacles = [
+        { x: cx - 600, y: cy - 500, w: 110, h: 90, type: "rock" },
+        { x: cx + 500, y: cy - 560, w: 100, h: 80, type: "rock" },
+        { x: cx - 700, y: cy + 300, w: 130, h: 100, type: "rock" },
+        { x: cx + 620, y: cy + 420, w: 120, h: 110, type: "rock" },
+        { x: cx - 300, y: cy - 700, w: 90, h: 80, type: "rock" },
+        { x: cx + 250, y: cy + 660, w: 100, h: 90, type: "rock" },
+        { x: cx - 400, y: cy + 200, w: 80, h: 70, type: "rock" },
+        { x: cx + 380, y: cy - 220, w: 85, h: 75, type: "rock" },
+        { x: cx - 100, y: cy - 400, w: 70, h: 60, type: "rock" },
+        { x: cx + 120, y: cy + 380, w: 90, h: 75, type: "rock" },
+      ];
+      // lava pools
+      s.lava = [
+        { x: cx - 260, y: cy - 100, w: 180, h: 90 },
+        { x: cx + 80, y: cy - 60, w: 200, h: 110 },
+        { x: cx - 120, y: cy + 140, w: 240, h: 100 },
+        { x: cx - 550, y: cy + 40, w: 140, h: 200 },
+        { x: cx + 410, y: cy + 120, w: 160, h: 180 },
+        { x: cx - 40, y: cy - 340, w: 220, h: 90 },
+      ];
+      s.totems = [];
+      s.player.x = cx;
+      s.player.y = cy + 500;
+      s.player.hp = Math.min(s.player.maxHp, s.player.hp + 40);
+      // boss
+      s.boss = {
+        x: cx, y: cy - 500,
+        hp: 4000, maxHp: 4000, speed: 70, radius: 42,
+        lastShot: performance.now() + 3000,
+      };
+      setMessage("BOSS: THE HARBINGER", 3000);
+      setUiState((u) => ({ ...u, round: 999, zombiesLeft: 1, hp: s.player.hp }));
     }
 
     function update(dt: number) {
@@ -542,8 +639,8 @@ export function ZombieGame() {
         }
       }
 
-      // spawning
-      if (s.zombiesToSpawn > 0) {
+      // spawning (disabled in boss mode / transition)
+      if (!s.bossMode && s.totemPhase < 2 && s.zombiesToSpawn > 0) {
         s.spawnCooldown -= dt * 1000;
         if (s.spawnCooldown <= 0 && s.zombiesAlive < Math.min(24, 8 + s.round * 2)) {
           spawnZombie();
@@ -551,11 +648,119 @@ export function ZombieGame() {
           s.spawnCooldown = Math.max(200, 800 - s.round * 40);
         }
       }
-      if (s.zombiesToSpawn === 0 && s.zombiesAlive === 0) {
-        // next round
+      if (!s.bossMode && s.totemPhase < 2 && s.zombiesToSpawn === 0 && s.zombiesAlive === 0) {
         setTimeout(() => startRound(s.round + 1), 3000);
         s.zombiesToSpawn = -1; // guard
       }
+
+      // boss logic
+      if (s.bossMode && s.boss) {
+        const bs = s.boss;
+        const dx = s.player.x - bs.x, dy = s.player.y - bs.y;
+        const d = Math.hypot(dx, dy) || 1;
+        let dirX = dx / d, dirY = dy / d;
+        const look = bs.radius + 40;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          let blocker: typeof s.obstacles[number] | null = null;
+          const tx = bs.x + dirX * look, ty = bs.y + dirY * look;
+          for (const o of s.obstacles) {
+            if (circleRectOverlap(tx, ty, bs.radius + 2, o.x, o.y, o.w, o.h)) { blocker = o; break; }
+          }
+          if (!blocker) break;
+          const ocx = blocker.x + blocker.w / 2, ocy = blocker.y + blocker.h / 2;
+          const cross = dirX * (ocy - bs.y) - dirY * (ocx - bs.x);
+          const sign = cross > 0 ? -1 : 1;
+          const ang = sign * (Math.PI / 3);
+          const cs = Math.cos(ang), sn = Math.sin(ang);
+          const nx = dirX * cs - dirY * sn;
+          const ny = dirX * sn + dirY * cs;
+          dirX = nx; dirY = ny;
+        }
+        bs.x += dirX * bs.speed * dt;
+        (s as any)._resolveObstacles(bs, bs.radius);
+        bs.y += dirY * bs.speed * dt;
+        (s as any)._resolveObstacles(bs, bs.radius);
+        if (d < bs.radius + s.player.r) damagePlayer(30);
+        // shoot
+        const now = performance.now();
+        if (now - bs.lastShot > 5000) {
+          bs.lastShot = now;
+          const a = Math.atan2(s.player.y - bs.y, s.player.x - bs.x);
+          for (let i = -1; i <= 1; i++) {
+            const aa = a + i * 0.18;
+            s.bossBullets.push({
+              x: bs.x + Math.cos(aa) * bs.radius,
+              y: bs.y + Math.sin(aa) * bs.radius,
+              vx: Math.cos(aa) * 480, vy: Math.sin(aa) * 480,
+              life: 2.2, dmg: 22,
+            });
+          }
+          s.camera.shake = Math.min(s.camera.shake + 6, 16);
+        }
+        // player bullets vs boss
+        for (let i = s.bullets.length - 1; i >= 0; i--) {
+          const b = s.bullets[i];
+          const bdx = bs.x - b.x, bdy = bs.y - b.y;
+          if (bdx * bdx + bdy * bdy < bs.radius * bs.radius) {
+            bs.hp -= b.dmg;
+            s.bullets.splice(i, 1);
+            for (let k = 0; k < 5; k++) {
+              const aa = Math.random() * Math.PI * 2;
+              s.particles.push({ x: b.x, y: b.y, vx: Math.cos(aa) * 80, vy: Math.sin(aa) * 80, life: 0.3, maxLife: 0.3, color: "#f60", size: 3 });
+            }
+          }
+        }
+        if (bs.hp <= 0) {
+          for (let i = 0; i < 60; i++) {
+            const aa = Math.random() * Math.PI * 2;
+            s.particles.push({ x: bs.x, y: bs.y, vx: Math.cos(aa) * 260, vy: Math.sin(aa) * 260, life: 1.0, maxLife: 1.0, color: Math.random() < 0.5 ? "#ffcc55" : "#ff4020", size: 5 });
+          }
+          s.boss = null;
+          s.bossMode = false;
+          s.won = true;
+          s.points += 5000;
+          setUiState((u) => ({ ...u, gameOver: true, points: s.points, zombiesLeft: 0 }));
+        }
+      }
+
+      // boss bullets
+      for (let i = s.bossBullets.length - 1; i >= 0; i--) {
+        const b = s.bossBullets[i];
+        b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+        const pdx = b.x - s.player.x, pdy = b.y - s.player.y;
+        if (pdx * pdx + pdy * pdy < (s.player.r + 4) * (s.player.r + 4)) {
+          damagePlayer(b.dmg);
+          s.bossBullets.splice(i, 1); continue;
+        }
+        if ((s as any)._bulletHitsObstacle(b.x, b.y) || b.life <= 0 || b.x < 0 || b.y < 0 || b.x > MAP_W || b.y > MAP_H) {
+          s.bossBullets.splice(i, 1);
+        }
+      }
+
+      // lava damage
+      if (s.lava.length) {
+        const now = performance.now();
+        for (const l of s.lava) {
+          if (s.player.x > l.x && s.player.x < l.x + l.w && s.player.y > l.y && s.player.y < l.y + l.h) {
+            if (now - s.lastLavaDmg > 350) {
+              s.lastLavaDmg = now;
+              s.player.hp -= 8;
+              s.hitFlash = Math.max(s.hitFlash, 0.5);
+              if (s.player.hp <= 0) {
+                s.player.hp = 0; s.gameOver = true;
+                setUiState((u) => ({ ...u, gameOver: true, hp: 0 }));
+              } else {
+                setUiState((u) => ({ ...u, hp: s.player.hp }));
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      // transition flash decay
+      if (s.transitionFlash > 0) s.transitionFlash = Math.max(0, s.transitionFlash - dt * 0.6);
+
 
       // pickups
       for (let i = s.pickups.length - 1; i >= 0; i--) {
@@ -865,22 +1070,160 @@ export function ZombieGame() {
       }
     }
 
+    function drawTotems() {
+      const now = performance.now();
+      for (const t of s.totems) {
+        if (!t.active) continue;
+        const sx = t.x - s.camera.x, sy = t.y - s.camera.y;
+        if (sx < -80 || sy < -120 || sx > canvas.width + 80 || sy > canvas.height + 120) continue;
+        const pulse = 0.6 + Math.sin(now / 260) * 0.4;
+        // glow ring on ground (kill radius)
+        ctx.strokeStyle = `rgba(180,80,255,${0.15 + pulse * 0.15})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(sx, sy, 220, 0, Math.PI * 2); ctx.stroke();
+        // shadow base
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.beginPath(); ctx.ellipse(sx, sy + 34, 26, 8, 0, 0, Math.PI * 2); ctx.fill();
+        // pole body
+        ctx.fillStyle = "#2a1a10";
+        ctx.fillRect(sx - 14, sy - 60, 28, 90);
+        ctx.strokeStyle = "#0a0503"; ctx.lineWidth = 2;
+        ctx.strokeRect(sx - 14, sy - 60, 28, 90);
+        // carvings
+        ctx.fillStyle = "#5a2a10";
+        ctx.fillRect(sx - 10, sy - 50, 20, 14);
+        ctx.fillRect(sx - 10, sy - 20, 20, 14);
+        ctx.fillRect(sx - 10, sy + 10, 20, 14);
+        // glowing eyes
+        ctx.fillStyle = `rgba(200,100,255,${pulse})`;
+        ctx.beginPath(); ctx.arc(sx - 5, sy - 43, 2.4, 0, Math.PI * 2);
+        ctx.arc(sx + 5, sy - 43, 2.4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = `rgba(255,80,80,${pulse})`;
+        ctx.beginPath(); ctx.arc(sx - 5, sy - 13, 2.4, 0, Math.PI * 2);
+        ctx.arc(sx + 5, sy - 13, 2.4, 0, Math.PI * 2); ctx.fill();
+        // counter above
+        ctx.fillStyle = "#000"; ctx.fillRect(sx - 30, sy - 88, 60, 18);
+        ctx.strokeStyle = "#b060ff"; ctx.lineWidth = 1;
+        ctx.strokeRect(sx - 30, sy - 88, 60, 18);
+        ctx.fillStyle = "#e0c0ff";
+        ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
+        ctx.fillText(`${t.kills}/${t.need}`, sx, sy - 74);
+      }
+    }
+
+    function drawLava() {
+      const t = performance.now() / 400;
+      for (const l of s.lava) {
+        const sx = l.x - s.camera.x, sy = l.y - s.camera.y;
+        if (sx + l.w < 0 || sy + l.h < 0 || sx > canvas.width || sy > canvas.height) continue;
+        // outer glow
+        ctx.fillStyle = "#3a0a02";
+        ctx.fillRect(sx - 4, sy - 4, l.w + 8, l.h + 8);
+        // lava base
+        const grd = ctx.createLinearGradient(sx, sy, sx, sy + l.h);
+        grd.addColorStop(0, "#ff5a10");
+        grd.addColorStop(1, "#8a1a02");
+        ctx.fillStyle = grd;
+        ctx.fillRect(sx, sy, l.w, l.h);
+        // bubbling spots
+        ctx.fillStyle = "rgba(255,220,80,0.7)";
+        for (let i = 0; i < 4; i++) {
+          const bx = sx + ((i * 53 + t * 20) % l.w);
+          const by = sy + ((i * 37 + t * 15) % l.h);
+          const rr = 3 + Math.sin(t + i) * 2;
+          ctx.beginPath(); ctx.arc(bx, by, Math.abs(rr), 0, Math.PI * 2); ctx.fill();
+        }
+      }
+    }
+
+    function drawBoss() {
+      if (!s.boss) return;
+      const bs = s.boss;
+      const sx = bs.x - s.camera.x, sy = bs.y - s.camera.y;
+      const pulse = 0.7 + Math.sin(performance.now() / 200) * 0.3;
+      // aura
+      const grd = ctx.createRadialGradient(sx, sy, bs.radius * 0.5, sx, sy, bs.radius * 2.2);
+      grd.addColorStop(0, `rgba(255,60,20,${0.35 * pulse})`);
+      grd.addColorStop(1, "rgba(255,60,20,0)");
+      ctx.fillStyle = grd;
+      ctx.fillRect(sx - bs.radius * 2.2, sy - bs.radius * 2.2, bs.radius * 4.4, bs.radius * 4.4);
+      // body
+      ctx.fillStyle = "#1a0505";
+      ctx.beginPath(); ctx.arc(sx, sy, bs.radius, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#c93030"; ctx.lineWidth = 4; ctx.stroke();
+      // spikes
+      const now = performance.now() / 500;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + now;
+        ctx.fillStyle = "#5a0a0a";
+        ctx.beginPath();
+        ctx.moveTo(sx + Math.cos(a) * bs.radius, sy + Math.sin(a) * bs.radius);
+        ctx.lineTo(sx + Math.cos(a + 0.2) * (bs.radius + 12), sy + Math.sin(a + 0.2) * (bs.radius + 12));
+        ctx.lineTo(sx + Math.cos(a + 0.4) * bs.radius, sy + Math.sin(a + 0.4) * bs.radius);
+        ctx.closePath(); ctx.fill();
+      }
+      // eyes
+      ctx.fillStyle = `rgba(255,220,80,${pulse})`;
+      const ang = Math.atan2(s.player.y - bs.y, s.player.x - bs.x);
+      const ex = Math.cos(ang) * (bs.radius * 0.4);
+      const ey = Math.sin(ang) * (bs.radius * 0.4);
+      const perpX = -Math.sin(ang) * 10, perpY = Math.cos(ang) * 10;
+      ctx.beginPath();
+      ctx.arc(sx + ex + perpX, sy + ey + perpY, 4, 0, Math.PI * 2);
+      ctx.arc(sx + ex - perpX, sy + ey - perpY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      // hp bar (large, top of screen)
+      const barW = Math.min(600, canvas.width - 200);
+      const barX = (canvas.width - barW) / 2;
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillRect(barX - 4, 46, barW + 8, 22);
+      ctx.fillStyle = "#3a0505";
+      ctx.fillRect(barX, 50, barW, 14);
+      ctx.fillStyle = "#c93030";
+      ctx.fillRect(barX, 50, barW * (bs.hp / bs.maxHp), 14);
+      ctx.fillStyle = "#e0c090"; ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
+      ctx.fillText("THE HARBINGER", canvas.width / 2, 44);
+    }
+
+    function drawBossBullets() {
+      for (const b of s.bossBullets) {
+        const sx = b.x - s.camera.x, sy = b.y - s.camera.y;
+        ctx.fillStyle = "#ff4020";
+        ctx.beginPath(); ctx.arc(sx, sy, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,180,80,0.6)";
+        ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    function drawTransitionFlash() {
+      if (s.transitionFlash > 0.01) {
+        ctx.fillStyle = `rgba(255,255,255,${Math.min(1, s.transitionFlash)})`;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
     function render() {
-      ctx.fillStyle = "#0a0d0a";
+      ctx.fillStyle = s.bossMode ? "#1a0505" : "#0a0d0a";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       drawGrid();
       drawMapBounds();
-      drawBuyStations();
+      if (s.bossMode) drawLava();
+      if (!s.bossMode) drawBuyStations();
       drawPickups();
       drawObstacles();
+      drawTotems();
       drawParticles();
       drawZombies();
+      drawBoss();
+      drawBossBullets();
       drawPlayer();
       drawBullets();
       drawFog();
       drawHitFlash();
+      drawTransitionFlash();
       drawMessage();
     }
+
 
     let raf = 0;
     const loop = (t: number) => {
@@ -913,11 +1256,13 @@ export function ZombieGame() {
         <>
           <div className="absolute top-4 left-4 font-mono text-[#c9a24a] pointer-events-none">
             <div className="text-3xl font-bold tracking-wider drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
-              ROUND {uiState.round}
+              {uiState.round === 999 ? "BOSS FIGHT" : `ROUND ${uiState.round}`}
             </div>
-            <div className="mt-2 text-sm text-[#a89060]">
-              ZOMBIES: {uiState.zombiesLeft}
-            </div>
+            {uiState.round !== 999 && (
+              <div className="mt-2 text-sm text-[#a89060]">
+                ZOMBIES: {uiState.zombiesLeft}
+              </div>
+            )}
           </div>
 
           <div className="absolute top-4 right-4 font-mono text-right pointer-events-none">
@@ -989,16 +1334,29 @@ export function ZombieGame() {
         </div>
       )}
 
-      {/* Game over */}
+      {/* Game over / Victory */}
       {uiState.gameOver && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/80">
           <div className="text-center font-mono">
-            <h1 className="text-7xl font-bold text-[#c93030] tracking-widest">
-              YOU DIED
-            </h1>
-            <p className="text-[#a89060] mt-4 text-xl">
-              SURVIVED {uiState.round} ROUND{uiState.round !== 1 ? "S" : ""}
-            </p>
+            {uiState.hp > 0 ? (
+              <>
+                <h1 className="text-7xl font-bold text-[#c9a24a] tracking-widest drop-shadow-[0_4px_10px_rgba(201,162,74,0.5)]">
+                  VICTORY
+                </h1>
+                <p className="text-[#a89060] mt-4 text-xl">
+                  THE HARBINGER HAS FALLEN
+                </p>
+              </>
+            ) : (
+              <>
+                <h1 className="text-7xl font-bold text-[#c93030] tracking-widest">
+                  YOU DIED
+                </h1>
+                <p className="text-[#a89060] mt-4 text-xl">
+                  SURVIVED {uiState.round} ROUND{uiState.round !== 1 ? "S" : ""}
+                </p>
+              </>
+            )}
             <p className="text-[#8a8a6a] mt-1">{uiState.points} TOTAL POINTS</p>
             <button
               onClick={restart}
