@@ -639,8 +639,8 @@ export function ZombieGame() {
         }
       }
 
-      // spawning
-      if (s.zombiesToSpawn > 0) {
+      // spawning (disabled in boss mode / transition)
+      if (!s.bossMode && s.totemPhase < 2 && s.zombiesToSpawn > 0) {
         s.spawnCooldown -= dt * 1000;
         if (s.spawnCooldown <= 0 && s.zombiesAlive < Math.min(24, 8 + s.round * 2)) {
           spawnZombie();
@@ -648,11 +648,119 @@ export function ZombieGame() {
           s.spawnCooldown = Math.max(200, 800 - s.round * 40);
         }
       }
-      if (s.zombiesToSpawn === 0 && s.zombiesAlive === 0) {
-        // next round
+      if (!s.bossMode && s.totemPhase < 2 && s.zombiesToSpawn === 0 && s.zombiesAlive === 0) {
         setTimeout(() => startRound(s.round + 1), 3000);
         s.zombiesToSpawn = -1; // guard
       }
+
+      // boss logic
+      if (s.bossMode && s.boss) {
+        const bs = s.boss;
+        const dx = s.player.x - bs.x, dy = s.player.y - bs.y;
+        const d = Math.hypot(dx, dy) || 1;
+        let dirX = dx / d, dirY = dy / d;
+        const look = bs.radius + 40;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          let blocker: typeof s.obstacles[number] | null = null;
+          const tx = bs.x + dirX * look, ty = bs.y + dirY * look;
+          for (const o of s.obstacles) {
+            if (circleRectOverlap(tx, ty, bs.radius + 2, o.x, o.y, o.w, o.h)) { blocker = o; break; }
+          }
+          if (!blocker) break;
+          const ocx = blocker.x + blocker.w / 2, ocy = blocker.y + blocker.h / 2;
+          const cross = dirX * (ocy - bs.y) - dirY * (ocx - bs.x);
+          const sign = cross > 0 ? -1 : 1;
+          const ang = sign * (Math.PI / 3);
+          const cs = Math.cos(ang), sn = Math.sin(ang);
+          const nx = dirX * cs - dirY * sn;
+          const ny = dirX * sn + dirY * cs;
+          dirX = nx; dirY = ny;
+        }
+        bs.x += dirX * bs.speed * dt;
+        (s as any)._resolveObstacles(bs, bs.radius);
+        bs.y += dirY * bs.speed * dt;
+        (s as any)._resolveObstacles(bs, bs.radius);
+        if (d < bs.radius + s.player.r) damagePlayer(30);
+        // shoot
+        const now = performance.now();
+        if (now - bs.lastShot > 5000) {
+          bs.lastShot = now;
+          const a = Math.atan2(s.player.y - bs.y, s.player.x - bs.x);
+          for (let i = -1; i <= 1; i++) {
+            const aa = a + i * 0.18;
+            s.bossBullets.push({
+              x: bs.x + Math.cos(aa) * bs.radius,
+              y: bs.y + Math.sin(aa) * bs.radius,
+              vx: Math.cos(aa) * 480, vy: Math.sin(aa) * 480,
+              life: 2.2, dmg: 22,
+            });
+          }
+          s.camera.shake = Math.min(s.camera.shake + 6, 16);
+        }
+        // player bullets vs boss
+        for (let i = s.bullets.length - 1; i >= 0; i--) {
+          const b = s.bullets[i];
+          const bdx = bs.x - b.x, bdy = bs.y - b.y;
+          if (bdx * bdx + bdy * bdy < bs.radius * bs.radius) {
+            bs.hp -= b.dmg;
+            s.bullets.splice(i, 1);
+            for (let k = 0; k < 5; k++) {
+              const aa = Math.random() * Math.PI * 2;
+              s.particles.push({ x: b.x, y: b.y, vx: Math.cos(aa) * 80, vy: Math.sin(aa) * 80, life: 0.3, maxLife: 0.3, color: "#f60", size: 3 });
+            }
+          }
+        }
+        if (bs.hp <= 0) {
+          for (let i = 0; i < 60; i++) {
+            const aa = Math.random() * Math.PI * 2;
+            s.particles.push({ x: bs.x, y: bs.y, vx: Math.cos(aa) * 260, vy: Math.sin(aa) * 260, life: 1.0, maxLife: 1.0, color: Math.random() < 0.5 ? "#ffcc55" : "#ff4020", size: 5 });
+          }
+          s.boss = null;
+          s.bossMode = false;
+          s.won = true;
+          s.points += 5000;
+          setUiState((u) => ({ ...u, gameOver: true, points: s.points, zombiesLeft: 0 }));
+        }
+      }
+
+      // boss bullets
+      for (let i = s.bossBullets.length - 1; i >= 0; i--) {
+        const b = s.bossBullets[i];
+        b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+        const pdx = b.x - s.player.x, pdy = b.y - s.player.y;
+        if (pdx * pdx + pdy * pdy < (s.player.r + 4) * (s.player.r + 4)) {
+          damagePlayer(b.dmg);
+          s.bossBullets.splice(i, 1); continue;
+        }
+        if ((s as any)._bulletHitsObstacle(b.x, b.y) || b.life <= 0 || b.x < 0 || b.y < 0 || b.x > MAP_W || b.y > MAP_H) {
+          s.bossBullets.splice(i, 1);
+        }
+      }
+
+      // lava damage
+      if (s.lava.length) {
+        const now = performance.now();
+        for (const l of s.lava) {
+          if (s.player.x > l.x && s.player.x < l.x + l.w && s.player.y > l.y && s.player.y < l.y + l.h) {
+            if (now - s.lastLavaDmg > 350) {
+              s.lastLavaDmg = now;
+              s.player.hp -= 8;
+              s.hitFlash = Math.max(s.hitFlash, 0.5);
+              if (s.player.hp <= 0) {
+                s.player.hp = 0; s.gameOver = true;
+                setUiState((u) => ({ ...u, gameOver: true, hp: 0 }));
+              } else {
+                setUiState((u) => ({ ...u, hp: s.player.hp }));
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      // transition flash decay
+      if (s.transitionFlash > 0) s.transitionFlash = Math.max(0, s.transitionFlash - dt * 0.6);
+
 
       // pickups
       for (let i = s.pickups.length - 1; i >= 0; i--) {
