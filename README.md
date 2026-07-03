@@ -62,6 +62,8 @@ pnpm dev
 | Move | WASD |
 | Aim | Mouse |
 | Fire | Left Mouse |
+| Reload | R |
+| Buy | E |
 | Pause | Esc |
 
 ---
