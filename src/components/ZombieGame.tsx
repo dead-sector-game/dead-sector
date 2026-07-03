@@ -1410,6 +1410,9 @@ export function ZombieGame() {
               </>
             )}
             <p className="text-[#8a8a6a] mt-1">{uiState.points} TOTAL POINTS</p>
+            <p className="text-[#c9a24a] mt-2 text-2xl font-bold tabular-nums tracking-widest">
+              TIME {formatTime(uiState.elapsedMs)}
+            </p>
             <button
               onClick={restart}
               className="mt-10 px-10 py-3 bg-[#c9a24a] text-black font-bold tracking-widest hover:bg-[#e0b85a] transition-colors"
