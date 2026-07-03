@@ -2,7 +2,7 @@
 
 > A cyberpunk roguelike arcade shooter where every run is different.
 
-![License](https://img.shields.io/badge/license-TBD-blue)
+![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Status](https://img.shields.io/badge/status-active-success)
 
@@ -62,26 +62,7 @@ pnpm dev
 | Move | WASD |
 | Aim | Mouse |
 | Fire | Left Mouse |
-| Ability | Right Mouse |
 | Pause | Esc |
-
-> Update with the actual controls.
-
----
-
-## Project Structure
-
-```
-.
-├── assets/
-├── src/
-├── docs/
-├── tools/
-├── third_party/
-└── README.md
-```
-
-Adjust this tree to match the repository.
 
 ---
 
@@ -114,18 +95,17 @@ git push origin feature/my-feature
 
 ## Roadmap
 
-- [ ] More enemy types
+- [ ] More zombie / boss types
 - [ ] Additional weapons
-- [ ] New hacking abilities
-- [ ] More sectors
+- [ ] More Maps
 - [ ] Accessibility improvements
-- [ ] Steam achievements
+- [ ] Leaderboard (if logged in)
 
 ---
 
 ## License
 
-This project is licensed under the license included in this repository.
+MIT.
 
 ---
 
