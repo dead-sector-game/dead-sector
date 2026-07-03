@@ -36,6 +36,434 @@ const MAP_W = 2000;
 const MAP_H = 2000;
 const BOSS_ARENA_SIZE = 1000;
 
+// ─── 8-bit Sound Engine (Web Audio API, no files) ───────────────────────────
+type MusicMode = "menu" | "main" | "boss" | null;
+
+const soundEngine = (() => {
+  let ctx: AudioContext | null = null;
+  let master: GainNode | null = null;
+  let musicGain: GainNode | null = null;
+  let sfxGain: GainNode | null = null;
+  let currentMusic: MusicMode = null;
+  let musicTimers: ReturnType<typeof setTimeout>[] = [];
+  let musicOscs: OscillatorNode[] = [];
+  let musicNoise: AudioBufferSourceNode | null = null;
+
+  function ensure() {
+    if (!ctx) {
+      ctx = new AudioContext();
+      master = ctx.createGain();
+      master.gain.value = 0.5;
+      master.connect(ctx.destination);
+      musicGain = ctx.createGain();
+      musicGain.gain.value = 0.25;
+      musicGain.connect(master);
+      sfxGain = ctx.createGain();
+      sfxGain.gain.value = 0.6;
+      sfxGain.connect(master);
+    }
+    if (ctx.state === "suspended") ctx.resume();
+    return { ctx: ctx!, sfx: sfxGain!, mus: musicGain! };
+  }
+
+  function playTone(
+    type: OscillatorType, freq: number, duration: number,
+    volume = 0.3, dest?: GainNode, freqEnd?: number, detune?: number,
+  ) {
+    const { ctx: c, sfx: d } = ensure();
+    const t = c.currentTime;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    if (freqEnd !== undefined) osc.frequency.linearRampToValueAtTime(freqEnd, t + duration);
+    if (detune) osc.detune.value = detune;
+    gain.gain.setValueAtTime(volume, t);
+    gain.gain.linearRampToValueAtTime(0, t + duration);
+    osc.connect(gain);
+    gain.connect(dest ?? d);
+    osc.start(t);
+    osc.stop(t + duration);
+  }
+
+  function playNoise(duration: number, volume = 0.2, filterFreq = 4000, dest?: GainNode) {
+    const { ctx: c, sfx: d } = ensure();
+    const t = c.currentTime;
+    const bufSize = Math.max(1, Math.floor(c.sampleRate * duration));
+    const buf = c.createBuffer(1, bufSize, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const filter = c.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = filterFreq;
+    filter.Q.value = 1;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(volume, t);
+    gain.gain.linearRampToValueAtTime(0, t + duration);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(dest ?? d);
+    src.start(t);
+    src.stop(t + duration);
+  }
+
+  // ── SFX ──────────────────────────────────────────────────────────────────
+  const sfx = {
+    shoot(weaponKey: string) {
+      switch (weaponKey) {
+        case "shotgun":
+          playNoise(0.12, 0.35, 3000);
+          playTone("square", 400, 0.12, 0.25, undefined, 100);
+          break;
+        case "smg":
+          playNoise(0.05, 0.2, 5000);
+          playTone("square", 600, 0.05, 0.2, undefined, 300);
+          break;
+        case "rifle":
+          playNoise(0.07, 0.25, 4500);
+          playTone("square", 1000, 0.07, 0.2, undefined, 400);
+          break;
+        case "lmg":
+          playNoise(0.06, 0.22, 4000);
+          playTone("square", 500, 0.06, 0.2, undefined, 250);
+          break;
+        default: // pistol
+          playNoise(0.08, 0.2, 4000);
+          playTone("square", 800, 0.08, 0.2, undefined, 200);
+          break;
+      }
+    },
+    reload() {
+      playTone("square", 1200, 0.04, 0.15);
+      setTimeout(() => playTone("square", 800, 0.04, 0.15), 80);
+    },
+    empty() {
+      playNoise(0.02, 0.12, 6000);
+    },
+    zombieHit() {
+      playTone("sine", 150, 0.06, 0.15);
+      playNoise(0.06, 0.1, 1500);
+    },
+    zombieDeath() {
+      playTone("sawtooth", 300, 0.2, 0.2, undefined, 80);
+      playNoise(0.15, 0.15, 2000);
+    },
+    barrelHit() {
+      playTone("square", 2000, 0.03, 0.15);
+      playNoise(0.04, 0.1, 6000);
+    },
+    barrelExplode() {
+      playNoise(0.4, 0.4, 2000);
+      playTone("sine", 80, 0.5, 0.35, undefined, 20);
+      playTone("square", 600, 0.3, 0.2, undefined, 60);
+    },
+    playerDamage() {
+      playTone("square", 400, 0.15, 0.25, undefined, 150);
+      playNoise(0.1, 0.15, 3000);
+    },
+    pickup() {
+      playTone("square", 500, 0.1, 0.2, undefined, 1200);
+    },
+    buyWeapon() {
+      playTone("square", 800, 0.06, 0.2);
+      setTimeout(() => playTone("square", 1200, 0.08, 0.2), 70);
+    },
+    totemAwaken() {
+      const { ctx: c, sfx: d } = ensure();
+      const t = c.currentTime;
+      for (const freq of [440, 554, 659]) {
+        const osc = c.createOscillator();
+        const g = c.createGain();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(0.15, t);
+        g.gain.linearRampToValueAtTime(0, t + 0.5);
+        osc.connect(g); g.connect(d);
+        osc.start(t); osc.stop(t + 0.5);
+      }
+    },
+    bossEnrage() {
+      playTone("sawtooth", 80, 0.6, 0.3);
+      playNoise(0.5, 0.25, 800);
+    },
+    bossCharge() {
+      const { ctx: c, sfx: d } = ensure();
+      const t = c.currentTime;
+      const noise = c.createBufferSource();
+      const buf = c.createBuffer(1, c.sampleRate * 0.3, c.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      noise.buffer = buf;
+      const filter = c.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(500, t);
+      filter.frequency.linearRampToValueAtTime(4000, t + 0.3);
+      filter.Q.value = 2;
+      const gain = c.createGain();
+      gain.gain.setValueAtTime(0.2, t);
+      gain.gain.linearRampToValueAtTime(0, t + 0.3);
+      noise.connect(filter); filter.connect(gain); gain.connect(d);
+      noise.start(t); noise.stop(t + 0.3);
+    },
+    bossDeath() {
+      playNoise(0.6, 0.4, 1500);
+      playTone("sine", 100, 0.6, 0.35, undefined, 20);
+      playTone("square", 200, 0.5, 0.25, undefined, 30);
+    },
+    roundStart() {
+      playTone("square", 440, 0.15, 0.2);
+      setTimeout(() => playTone("square", 660, 0.15, 0.2), 160);
+    },
+    lavaBurn() {
+      playNoise(0.1, 0.1, 2000);
+    },
+    obstacleHit() {
+      playNoise(0.04, 0.12, 3000);
+      playTone("square", 300, 0.03, 0.08);
+    },
+  };
+
+  // ── Music helpers ────────────────────────────────────────────────────────
+  function stopMusic() {
+    for (const t of musicTimers) clearTimeout(t);
+    musicTimers = [];
+    for (const o of musicOscs) { try { o.stop(); } catch {} }
+    musicOscs = [];
+    if (musicNoise) { try { musicNoise.stop(); } catch {} musicNoise = null; }
+    currentMusic = null;
+  }
+
+  function musicNote(
+    type: OscillatorType, freq: number, startBeat: number, beats: number,
+    bpm: number, volume = 0.12, dest?: GainNode,
+  ) {
+    const { ctx: c, mus: d } = ensure();
+    const t = c.currentTime;
+    const startSec = t + (startBeat / bpm) * 60;
+    const durSec = (beats / bpm) * 60;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(volume, startSec);
+    gain.gain.linearRampToValueAtTime(volume * 0.7, startSec + durSec * 0.8);
+    gain.gain.linearRampToValueAtTime(0, startSec + durSec);
+    osc.connect(gain);
+    gain.connect(dest ?? d);
+    osc.start(startSec);
+    osc.stop(startSec + durSec);
+    musicOscs.push(osc);
+  }
+
+  function musicHihat(startBeat: number, bpm: number, volume = 0.06) {
+    const { ctx: c, mus: d } = ensure();
+    const t = c.currentTime;
+    const startSec = t + (startBeat / bpm) * 60;
+    const durSec = (0.5 / bpm) * 60;
+    const bufSize = Math.max(1, Math.floor(c.sampleRate * durSec));
+    const buf = c.createBuffer(1, bufSize, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const filter = c.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 7000;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(volume, startSec);
+    gain.gain.linearRampToValueAtTime(0, startSec + durSec);
+    src.connect(filter); filter.connect(gain); gain.connect(d);
+    src.start(startSec); src.stop(startSec + durSec);
+  }
+
+  function musicKick(startBeat: number, bpm: number, volume = 0.18) {
+    const { ctx: c, mus: d } = ensure();
+    const t = c.currentTime;
+    const startSec = t + (startBeat / bpm) * 60;
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(150, startSec);
+    osc.frequency.linearRampToValueAtTime(40, startSec + 0.08);
+    gain.gain.setValueAtTime(volume, startSec);
+    gain.gain.linearRampToValueAtTime(0, startSec + 0.15);
+    osc.connect(gain); gain.connect(d);
+    osc.start(startSec); osc.stop(startSec + 0.15);
+    musicOscs.push(osc);
+  }
+
+  function musicSnare(startBeat: number, bpm: number, volume = 0.1) {
+    const { ctx: c, mus: d } = ensure();
+    const t = c.currentTime;
+    const startSec = t + (startBeat / bpm) * 60;
+    const durSec = (1 / bpm) * 60;
+    const bufSize = Math.max(1, Math.floor(c.sampleRate * durSec));
+    const buf = c.createBuffer(1, bufSize, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const filter = c.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 3000;
+    const gain = c.createGain();
+    gain.gain.setValueAtTime(volume, startSec);
+    gain.gain.linearRampToValueAtTime(0, startSec + durSec * 0.7);
+    src.connect(filter); filter.connect(gain); gain.connect(d);
+    src.start(startSec); src.stop(startSec + durSec);
+  }
+
+  // ── Music Tracks ─────────────────────────────────────────────────────────
+
+  function playMenuMusic() {
+    stopMusic();
+    currentMusic = "menu";
+    const bpm = 60;
+    const bars = 8;
+    const beatsPerBar = 4;
+    const totalBeats = bars * beatsPerBar;
+    const loopMs = (totalBeats / bpm) * 60 * 1000;
+    // low drone
+    musicNote("sine", 55, 0, totalBeats, bpm, 0.15);
+    // sparse arpeggio (minor pentatonic)
+    const notes = [165, 196, 220, 262, 294];
+    for (let bar = 0; bar < bars; bar++) {
+      const beat = bar * beatsPerBar;
+      musicNote("square", notes[bar % notes.length], beat, 2, bpm, 0.06);
+      musicNote("square", notes[(bar + 2) % notes.length], beat + 2, 2, bpm, 0.04);
+    }
+    // subtle noise floor
+    const { ctx: c, mus: d } = ensure();
+    const t = c.currentTime;
+    const dur = (totalBeats / bpm) * 60;
+    const bufSize = Math.max(1, Math.floor(c.sampleRate * dur));
+    const buf = c.createBuffer(1, bufSize, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    const filter = c.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 200;
+    filter.Q.value = 0.5;
+    const gain = c.createGain();
+    gain.gain.value = 0.03;
+    src.connect(filter); filter.connect(gain); gain.connect(d);
+    src.start(t); src.stop(t + dur);
+    musicNoise = src;
+    const timer = setTimeout(() => { if (currentMusic === "menu") playMenuMusic(); }, loopMs);
+    musicTimers.push(timer);
+  }
+
+  function playMainMusic() {
+    stopMusic();
+    currentMusic = "main";
+    const bpm = 130;
+    const bars = 16;
+    const beatsPerBar = 4;
+    const totalBeats = bars * beatsPerBar;
+    const loopMs = (totalBeats / bpm) * 60 * 1000;
+    // bass line (E minor)
+    const bassNotes = [82, 98, 110, 123]; // E2, G2, A2, B2
+    for (let bar = 0; bar < bars; bar++) {
+      const beat = bar * beatsPerBar;
+      const note = bassNotes[bar % bassNotes.length];
+      musicNote("square", note, beat, 1, bpm, 0.12);
+      musicNote("square", note, beat + 1, 1, bpm, 0.10);
+      musicNote("square", note * 1.5, beat + 2, 0.5, bpm, 0.08);
+      musicNote("square", note, beat + 2.5, 1.5, bpm, 0.10);
+    }
+    // lead melody (minor scale)
+    const leadNotes = [330, 392, 440, 523, 494, 440, 392, 330, 294, 330, 392, 440, 523, 587, 523, 494];
+    for (let i = 0; i < totalBeats; i++) {
+      if (i >= 8) { // lead enters after 2 bars
+        musicNote("square", leadNotes[i % leadNotes.length], i, 0.8, bpm, 0.06);
+      }
+    }
+    // hi-hats
+    for (let i = 0; i < totalBeats * 2; i++) {
+      musicHihat(i * 0.5, bpm, 0.04);
+    }
+    // kicks on 1 and 3
+    for (let bar = 0; bar < bars; bar++) {
+      musicKick(bar * beatsPerBar, bpm, 0.15);
+      musicKick(bar * beatsPerBar + 2, bpm, 0.12);
+    }
+    const timer = setTimeout(() => { if (currentMusic === "main") playMainMusic(); }, loopMs);
+    musicTimers.push(timer);
+  }
+
+  function playBossMusic() {
+    stopMusic();
+    currentMusic = "boss";
+    const bpm = 155;
+    const bars = 8;
+    const beatsPerBar = 4;
+    const totalBeats = bars * beatsPerBar;
+    const loopMs = (totalBeats / bpm) * 60 * 1000;
+    // heavy bass pulse (chromatic descent)
+    const bassFreqs = [110, 104, 98, 92, 87, 82, 78, 73];
+    for (let bar = 0; bar < bars; bar++) {
+      const beat = bar * beatsPerBar;
+      const note = bassFreqs[bar % bassFreqs.length];
+      for (let b = 0; b < 4; b++) {
+        musicNote("sawtooth", note, beat + b * 0.5, 0.4, bpm, 0.10);
+      }
+    }
+    // urgent lead (chromatic tension)
+    const leadNotes = [440, 466, 494, 523, 494, 466, 440, 415, 440, 466, 494, 523, 554, 523, 494, 466];
+    for (let i = 0; i < totalBeats; i++) {
+      musicNote("square", leadNotes[i % leadNotes.length], i, 0.6, bpm, 0.07);
+    }
+    // rapid hi-hats (16th notes)
+    for (let i = 0; i < totalBeats * 4; i++) {
+      musicHihat(i * 0.25, bpm, 0.035);
+    }
+    // snares on 2 and 4
+    for (let bar = 0; bar < bars; bar++) {
+      musicSnare(bar * beatsPerBar + 1, bpm, 0.08);
+      musicSnare(bar * beatsPerBar + 3, bpm, 0.08);
+    }
+    // sub-drop every 4th bar
+    for (let bar = 0; bar < bars; bar += 4) {
+      const { ctx: c, mus: d } = ensure();
+      const t = c.currentTime;
+      const startSec = t + (bar * beatsPerBar / bpm) * 60;
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(60, startSec);
+      osc.frequency.linearRampToValueAtTime(20, startSec + 0.4);
+      gain.gain.setValueAtTime(0.2, startSec);
+      gain.gain.linearRampToValueAtTime(0, startSec + 0.5);
+      osc.connect(gain); gain.connect(d);
+      osc.start(startSec); osc.stop(startSec + 0.5);
+      musicOscs.push(osc);
+    }
+    const timer = setTimeout(() => { if (currentMusic === "boss") playBossMusic(); }, loopMs);
+    musicTimers.push(timer);
+  }
+
+  // ── Public API ───────────────────────────────────────────────────────────
+  return {
+    ...sfx,
+    setMusic(mode: MusicMode) {
+      ensure();
+      if (mode === currentMusic) return;
+      switch (mode) {
+        case "menu": playMenuMusic(); break;
+        case "main": playMainMusic(); break;
+        case "boss": playBossMusic(); break;
+        case null: stopMusic(); break;
+      }
+    },
+    getCurrentMusic: () => currentMusic,
+    init() { ensure(); },
+  };
+})();
+
 export function ZombieGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const startGameRef = useRef<() => void>(() => {});
@@ -87,7 +515,7 @@ export function ZombieGame() {
       { x: MAP_W / 2, y: MAP_H / 2 - 500 },
       { x: MAP_W / 2, y: MAP_H / 2 + 500 },
     ],
-    obstacles: [] as { x: number; y: number; w: number; h: number; type: "rock" | "crate" | "fence" | "barrel" }[],
+    obstacles: [] as { x: number; y: number; w: number; h: number; type: "rock" | "crate" | "fence" | "barrel"; hp?: number }[],
     totems: [] as { x: number; y: number; kills: number; need: number; active: boolean; id: string }[],
     totemPhase: 0 as 0 | 1 | 2 | 3, // 0=corners, 1=center, 2=transitioning, 3=boss
     transitionFlash: 0,
@@ -151,12 +579,12 @@ export function ZombieGame() {
         { x: cx - 900, y: cy - 200, w: 16, h: 200, type: "fence" },
         { x: cx + 884, y: cy - 200, w: 16, h: 200, type: "fence" },
         // barrels
-        { x: cx - 450, y: cy - 500, w: 28, h: 28, type: "barrel" },
-        { x: cx + 450, y: cy - 480, w: 28, h: 28, type: "barrel" },
-        { x: cx - 480, y: cy + 460, w: 28, h: 28, type: "barrel" },
-        { x: cx + 470, y: cy + 490, w: 28, h: 28, type: "barrel" },
-        { x: cx - 250, y: cy + 370, w: 28, h: 28, type: "barrel" },
-        { x: cx + 280, y: cy - 380, w: 28, h: 28, type: "barrel" },
+        { x: cx - 450, y: cy - 500, w: 28, h: 28, type: "barrel", hp: 50 },
+        { x: cx + 450, y: cy - 480, w: 28, h: 28, type: "barrel", hp: 50 },
+        { x: cx - 480, y: cy + 460, w: 28, h: 28, type: "barrel", hp: 50 },
+        { x: cx + 470, y: cy + 490, w: 28, h: 28, type: "barrel", hp: 50 },
+        { x: cx - 250, y: cy + 370, w: 28, h: 28, type: "barrel", hp: 50 },
+        { x: cx + 280, y: cy - 380, w: 28, h: 28, type: "barrel", hp: 50 },
         // outer wall crates
         { x: cx - 850, y: cy + 750, w: 60, h: 60, type: "crate" },
         { x: cx + 820, y: cy - 780, w: 60, h: 60, type: "crate" },
@@ -235,6 +663,13 @@ export function ZombieGame() {
       }
       return false;
     };
+    (s as any)._findHitObstacle = (bx: number, by: number) => {
+      for (let i = 0; i < s.obstacles.length; i++) {
+        const o = s.obstacles[i];
+        if (bx >= o.x && bx <= o.x + o.w && by >= o.y && by <= o.y + o.h) return i;
+      }
+      return -1;
+    };
 
     const resize = () => {
       canvas.width = window.innerWidth;
@@ -286,6 +721,7 @@ export function ZombieGame() {
       s.zombiesAlive = 0;
       s.spawnCooldown = 500;
       setMessage(`ROUND ${r}`, 2200);
+      soundEngine.roundStart();
       setUiState((u) => ({ ...u, round: r, zombiesLeft: count }));
     }
 
@@ -298,6 +734,8 @@ export function ZombieGame() {
       s.endTime = 0;
       setUiState((u) => ({ ...u, started: true, elapsedMs: 0 }));
       setShowHelp(false);
+      soundEngine.init();
+      soundEngine.setMusic("main");
       startRound(1);
     }
 
@@ -310,6 +748,7 @@ export function ZombieGame() {
       if (!pw || pw.mag >= w.magSize || pw.reserve <= 0) return;
       if (performance.now() < s.reloadingUntil) return;
       s.reloadingUntil = performance.now() + w.reloadMs;
+      soundEngine.reload();
       setUiState((u) => ({ ...u, reloading: true }));
     }
 
@@ -334,6 +773,7 @@ export function ZombieGame() {
           const cost = owned ? Math.floor(w.cost * 0.5) : w.cost; // refill cost
           if (s.points < cost) { setMessage(`Need ${cost} points`); return; }
           s.points -= cost;
+          soundEngine.buyWeapon();
           if (!owned) {
             s.weapons[b.weapon] = { mag: w.magSize, reserve: w.reserve, owned: true };
             s.currentWeaponKey = b.weapon;
@@ -355,6 +795,7 @@ export function ZombieGame() {
           const cost = 500;
           if (s.points < cost) { setMessage(`Ammo: ${cost} pts`); return; }
           s.points -= cost;
+          soundEngine.buyWeapon();
           const w = WEAPONS[s.currentWeaponKey];
           const pw = s.weapons[s.currentWeaponKey];
           pw.reserve = w.reserve;
@@ -401,7 +842,7 @@ export function ZombieGame() {
       const now = performance.now();
       if (now < s.reloadingUntil) return;
       if (now - s.lastShot < w.fireRate) return;
-      if (pw.mag <= 0) { tryReload(); return; }
+      if (pw.mag <= 0) { soundEngine.empty(); tryReload(); return; }
       s.lastShot = now;
       pw.mag--;
       const baseAngle = Math.atan2(s.mouse.worldY - s.player.y, s.mouse.worldX - s.player.x);
@@ -416,6 +857,7 @@ export function ZombieGame() {
           dmg: w.dmg,
         });
       }
+      soundEngine.shoot(key);
       // muzzle flash
       for (let i = 0; i < 4; i++) {
         s.particles.push({
@@ -447,18 +889,88 @@ export function ZombieGame() {
       s.player.hp -= amt;
       s.hitFlash = 1;
       s.camera.shake = Math.min(s.camera.shake + 8, 16);
+      soundEngine.playerDamage();
       if (s.player.hp <= 0) {
         s.player.hp = 0;
         s.gameOver = true;
+        soundEngine.setMusic("menu");
         setUiState((u) => ({ ...u, gameOver: true, hp: 0 }));
       }
       setUiState((u) => ({ ...u, hp: Math.max(0, s.player.hp) }));
+    }
+
+    function explodeBarrel(bx: number, by: number) {
+      const EXPLOSION_RADIUS = 100;
+      const EXPLOSION_DAMAGE = 80;
+      soundEngine.barrelExplode();
+      // remove barrel from obstacles
+      for (let i = s.obstacles.length - 1; i >= 0; i--) {
+        const o = s.obstacles[i];
+        if (o.type === "barrel" && bx >= o.x && bx <= o.x + o.w && by >= o.y && by <= o.y + o.h) {
+          s.obstacles.splice(i, 1);
+          break;
+        }
+      }
+      // fire particles
+      for (let i = 0; i < 30; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 80 + Math.random() * 250;
+        s.particles.push({
+          x: bx, y: by, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          life: 0.4 + Math.random() * 0.5, maxLife: 0.9,
+          color: Math.random() < 0.4 ? "#ff6600" : Math.random() < 0.6 ? "#ff3300" : "#ffaa00",
+          size: 4 + Math.random() * 6,
+        });
+      }
+      // smoke particles
+      for (let i = 0; i < 12; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const sp = 20 + Math.random() * 60;
+        s.particles.push({
+          x: bx, y: by, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          life: 0.8 + Math.random() * 0.6, maxLife: 1.4,
+          color: "#333",
+          size: 6 + Math.random() * 8,
+        });
+      }
+      // scorch decal
+      s.decals.push({ x: bx, y: by, r: EXPLOSION_RADIUS * 0.7, color: "#1a1008", alpha: 0.6, kind: "scorch" });
+      if (s.decals.length > 120) s.decals.shift();
+      // camera shake
+      s.camera.shake = Math.min(s.camera.shake + 14, 20);
+      // damage nearby zombies
+      for (let i = s.zombies.length - 1; i >= 0; i--) {
+        const z = s.zombies[i];
+        const dx = z.x - bx, dy = z.y - by;
+        const dist = Math.hypot(dx, dy);
+        if (dist < EXPLOSION_RADIUS) {
+          const falloff = 1 - dist / EXPLOSION_RADIUS;
+          z.hp -= EXPLOSION_DAMAGE * falloff;
+          // knockback
+          if (dist > 0) {
+            z.x += (dx / dist) * 60 * falloff;
+            z.y += (dy / dist) * 60 * falloff;
+          }
+          if (z.hp <= 0) {
+            s.zombies.splice(i, 1);
+            killZombie(z);
+          }
+        }
+      }
+      // damage player
+      const pdx = s.player.x - bx, pdy = s.player.y - by;
+      const playerDist = Math.hypot(pdx, pdy);
+      if (playerDist < EXPLOSION_RADIUS) {
+        const falloff = 1 - playerDist / EXPLOSION_RADIUS;
+        damagePlayer(Math.round(EXPLOSION_DAMAGE * falloff * 0.5));
+      }
     }
 
     function killZombie(z: Zombie, headshot = false) {
       s.zombiesAlive--;
       const pts = (z.type === "brute" ? 200 : z.type === "runner" ? 80 : 60) + (headshot ? 30 : 0);
       s.points += pts;
+      soundEngine.zombieDeath();
       // blood decal
       s.decals.push({ x: z.x, y: z.y, r: z.radius * (1.4 + Math.random() * 0.6), color: "#4a0808", alpha: 0.55, kind: "blood" });
       if (s.decals.length > 120) s.decals.shift();
@@ -484,6 +996,7 @@ export function ZombieGame() {
           t.kills++;
           if (t.kills >= t.need) {
             t.active = false;
+            soundEngine.totemAwaken();
             setMessage(`TOTEM ${t.id} AWAKENED`);
             if (s.totemPhase === 0 && s.totems.every((tt) => !tt.active)) {
               s.totemPhase = 1;
@@ -523,6 +1036,8 @@ export function ZombieGame() {
       s.zombiesAlive = 0;
       s.zombiesToSpawn = -1;
       s.obstacles = [];
+      soundEngine.bossEnrage();
+      soundEngine.setMusic("boss");
       // lava pools (repositioned for smaller arena)
       s.lava = [
         { x: cx - 130, y: cy - 50, w: 140, h: 70 },
@@ -602,14 +1117,34 @@ export function ZombieGame() {
         b.life -= dt;
         let hit = false;
         // obstacle hit
-        if ((s as any)._bulletHitsObstacle(b.x, b.y)) {
+        const hitObsIdx = (s as any)._findHitObstacle(b.x, b.y);
+        if (hitObsIdx >= 0) {
           hit = true;
-          for (let k = 0; k < 4; k++) {
-            const a = Math.random() * Math.PI * 2;
-            s.particles.push({
-              x: b.x, y: b.y, vx: Math.cos(a) * 60, vy: Math.sin(a) * 60,
-              life: 0.25, maxLife: 0.25, color: "#888", size: 2 + Math.random() * 2,
-            });
+          const obs = s.obstacles[hitObsIdx];
+          if (obs.type === "barrel" && obs.hp !== undefined) {
+            obs.hp -= b.dmg;
+            soundEngine.barrelHit();
+            // sparks
+            for (let k = 0; k < 3; k++) {
+              const a = Math.random() * Math.PI * 2;
+              s.particles.push({
+                x: b.x, y: b.y, vx: Math.cos(a) * 70, vy: Math.sin(a) * 70,
+                life: 0.2, maxLife: 0.2, color: "#fa0", size: 2 + Math.random() * 2,
+              });
+            }
+            if (obs.hp <= 0) {
+              const cx = obs.x + obs.w / 2, cy = obs.y + obs.h / 2;
+              explodeBarrel(cx, cy);
+            }
+          } else {
+            soundEngine.obstacleHit();
+            for (let k = 0; k < 4; k++) {
+              const a = Math.random() * Math.PI * 2;
+              s.particles.push({
+                x: b.x, y: b.y, vx: Math.cos(a) * 60, vy: Math.sin(a) * 60,
+                life: 0.25, maxLife: 0.25, color: "#888", size: 2 + Math.random() * 2,
+              });
+            }
           }
         }
         if (!hit) for (let j = s.zombies.length - 1; j >= 0; j--) {
@@ -618,6 +1153,7 @@ export function ZombieGame() {
           if (dx * dx + dy * dy < z.radius * z.radius) {
             z.hp -= b.dmg;
             hit = true;
+            soundEngine.zombieHit();
             for (let k = 0; k < 5; k++) {
               const a = Math.random() * Math.PI * 2;
               s.particles.push({
@@ -714,6 +1250,7 @@ export function ZombieGame() {
         if (bs.phase === 1 && bs.hp <= bs.maxHp * 0.6) {
           bs.phase = 2;
           bs.lastCharge = now + 7000;
+          soundEngine.bossEnrage();
           setMessage("THE HARBINGER ENRAGES!", 2500);
           s.camera.shake = 12;
           for (let i = 0; i < 30; i++) {
@@ -726,6 +1263,7 @@ export function ZombieGame() {
         if (bs.phase === 2 && !bs.charging && now - bs.lastCharge > 7000) {
           bs.charging = true;
           bs.chargeTimer = 2.0;
+          soundEngine.bossCharge();
           s.camera.shake = 8;
           for (let i = 0; i < 15; i++) {
             const aa = Math.random() * Math.PI * 2;
@@ -821,6 +1359,7 @@ export function ZombieGame() {
           const bdx = bs.x - b.x, bdy = bs.y - b.y;
           if (bdx * bdx + bdy * bdy < bs.radius * bs.radius) {
             bs.hp -= b.dmg;
+            soundEngine.zombieHit();
             (bs as any).hitFlash = 1;
             (bs as any).hitShake = Math.min(12, ((bs as any).hitShake || 0) + 6);
             s.camera.shake = Math.max(s.camera.shake, 4);
@@ -838,6 +1377,8 @@ export function ZombieGame() {
             const aa = Math.random() * Math.PI * 2;
             s.particles.push({ x: bs.x, y: bs.y, vx: Math.cos(aa) * 260, vy: Math.sin(aa) * 260, life: 1.0, maxLife: 1.0, color: Math.random() < 0.5 ? "#ffcc55" : "#ff4020", size: 5 });
           }
+          soundEngine.bossDeath();
+          soundEngine.setMusic("menu");
           s.boss = null;
           s.bossMode = false;
           s.won = true;
@@ -867,6 +1408,7 @@ export function ZombieGame() {
           if (s.player.x > l.x && s.player.x < l.x + l.w && s.player.y > l.y && s.player.y < l.y + l.h) {
             if (now - s.lastLavaDmg > 350) {
               s.lastLavaDmg = now;
+              soundEngine.lavaBurn();
               s.player.hp -= 8;
               s.hitFlash = Math.max(s.hitFlash, 0.5);
               if (s.player.hp <= 0) {
@@ -891,6 +1433,7 @@ export function ZombieGame() {
         p.life -= dt;
         const dx = p.x - s.player.x, dy = p.y - s.player.y;
         if (dx * dx + dy * dy < 30 * 30) {
+          soundEngine.pickup();
           if (p.kind === "health") {
             s.player.hp = Math.min(s.player.maxHp, s.player.hp + 40);
             setUiState((u) => ({ ...u, hp: s.player.hp }));
@@ -1244,10 +1787,23 @@ export function ZombieGame() {
           }
         } else if (o.type === "barrel") {
           const cx = sx + o.w / 2, cy = sy + o.h / 2, r = o.w / 2;
-          ctx.fillStyle = "#7a2a1a";
+          const hpRatio = o.hp !== undefined ? Math.max(0, o.hp / 50) : 1;
+          // barrel body darkens as it takes damage
+          const cr = Math.round(122 * hpRatio + 30 * (1 - hpRatio));
+          const cg = Math.round(42 * hpRatio);
+          const cb = Math.round(26 * hpRatio);
+          ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
           ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = "#2a0a05";
           ctx.lineWidth = 2; ctx.stroke();
+          // warning stripe when damaged
+          if (hpRatio < 0.7) {
+            ctx.strokeStyle = hpRatio < 0.4 ? "#ff3300" : "#cc6600";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, Math.PI * 2); ctx.stroke();
+            ctx.setLineDash([]);
+          }
           ctx.strokeStyle = "#4a1a0a";
           ctx.lineWidth = 1.5;
           ctx.beginPath();
