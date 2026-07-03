@@ -1263,6 +1263,31 @@ export function ZombieGame() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!uiState.started) return;
+    const s = stateRef.current;
+    let raf = 0;
+    const tick = () => {
+      if (s.gameOver) {
+        if (!s.endTime) s.endTime = performance.now();
+        setUiState((u) => ({ ...u, elapsedMs: s.endTime - s.startTime }));
+        return;
+      }
+      setUiState((u) => ({ ...u, elapsedMs: performance.now() - s.startTime }));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [uiState.started, uiState.gameOver]);
+
+  const formatTime = (ms: number) => {
+    const total = Math.max(0, Math.floor(ms));
+    const m = Math.floor(total / 60000);
+    const sec = Math.floor((total % 60000) / 1000);
+    const cs = Math.floor((total % 1000) / 10);
+    return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+  };
+
   const restart = () => window.location.reload();
 
   return (
