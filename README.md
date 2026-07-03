@@ -6,7 +6,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![Status](https://img.shields.io/badge/status-active-success)
 
-Dead Sector is a fast-paced cyberpunk roguelike arcade shooter set inside hostile cyberspace. Battle through procedurally generated sectors, defeat increasingly dangerous ICE, and build unique hacking loadouts every run.
+Dead Sector is a fast-paced roguelike arcade shooter set inside hostile zombie world. Kill zombies to earn points. Spend points at the yellow buy stations to unlock stronger weapons. Green boxes refill ammo. Survive as many rounds as you can. Complete the Easter Egg and kill the boss to win.
 
 ---
 
