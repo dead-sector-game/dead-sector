@@ -159,10 +159,10 @@ export function ZombieGame() {
     if (s.totems.length === 0) {
       const cx = MAP_W / 2, cy = MAP_H / 2;
       s.totems = [
-        { x: cx - 720, y: cy - 720, kills: 0, need: 20, active: true, id: "NW" },
-        { x: cx + 720, y: cy - 720, kills: 0, need: 20, active: true, id: "NE" },
-        { x: cx - 720, y: cy + 720, kills: 0, need: 20, active: true, id: "SW" },
-        { x: cx + 720, y: cy + 720, kills: 0, need: 20, active: true, id: "SE" },
+        { x: cx - 720, y: cy - 720, kills: 0, need: 10, active: true, id: "NW" },
+        { x: cx + 720, y: cy - 720, kills: 0, need: 10, active: true, id: "NE" },
+        { x: cx - 720, y: cy + 720, kills: 0, need: 10, active: true, id: "SW" },
+        { x: cx + 720, y: cy + 720, kills: 0, need: 10, active: true, id: "SE" },
       ];
     }
 
@@ -656,6 +656,8 @@ export function ZombieGame() {
       // boss logic
       if (s.bossMode && s.boss) {
         const bs = s.boss;
+        (bs as any).hitFlash = Math.max(0, ((bs as any).hitFlash || 0) - dt * 4);
+        (bs as any).hitShake = Math.max(0, ((bs as any).hitShake || 0) - dt * 40);
         const dx = s.player.x - bs.x, dy = s.player.y - bs.y;
         const d = Math.hypot(dx, dy) || 1;
         let dirX = dx / d, dirY = dy / d;
@@ -703,10 +705,15 @@ export function ZombieGame() {
           const bdx = bs.x - b.x, bdy = bs.y - b.y;
           if (bdx * bdx + bdy * bdy < bs.radius * bs.radius) {
             bs.hp -= b.dmg;
+            (bs as any).hitFlash = 1;
+            (bs as any).hitShake = Math.min(12, ((bs as any).hitShake || 0) + 6);
+            s.camera.shake = Math.max(s.camera.shake, 4);
             s.bullets.splice(i, 1);
-            for (let k = 0; k < 5; k++) {
-              const aa = Math.random() * Math.PI * 2;
-              s.particles.push({ x: b.x, y: b.y, vx: Math.cos(aa) * 80, vy: Math.sin(aa) * 80, life: 0.3, maxLife: 0.3, color: "#f60", size: 3 });
+            const impactAng = Math.atan2(b.y - bs.y, b.x - bs.x);
+            for (let k = 0; k < 10; k++) {
+              const aa = impactAng + (Math.random() - 0.5) * 1.4;
+              const sp = 140 + Math.random() * 120;
+              s.particles.push({ x: b.x, y: b.y, vx: Math.cos(aa) * sp, vy: Math.sin(aa) * sp, life: 0.45, maxLife: 0.45, color: Math.random() < 0.5 ? "#ffdd66" : "#ff5522", size: 3 + Math.random() * 2 });
             }
           }
         }
@@ -1139,18 +1146,24 @@ export function ZombieGame() {
     function drawBoss() {
       if (!s.boss) return;
       const bs = s.boss;
-      const sx = bs.x - s.camera.x, sy = bs.y - s.camera.y;
+      const flash = (bs as any).hitFlash || 0;
+      const shake = (bs as any).hitShake || 0;
+      const shx = shake ? (Math.random() - 0.5) * shake : 0;
+      const shy = shake ? (Math.random() - 0.5) * shake : 0;
+      const sx = bs.x - s.camera.x + shx, sy = bs.y - s.camera.y + shy;
       const pulse = 0.7 + Math.sin(performance.now() / 200) * 0.3;
-      // aura
-      const grd = ctx.createRadialGradient(sx, sy, bs.radius * 0.5, sx, sy, bs.radius * 2.2);
-      grd.addColorStop(0, `rgba(255,60,20,${0.35 * pulse})`);
+      // aura (brighter when hit)
+      const grd = ctx.createRadialGradient(sx, sy, bs.radius * 0.5, sx, sy, bs.radius * (2.2 + flash * 0.6));
+      grd.addColorStop(0, `rgba(255,${60 + flash * 180},${20 + flash * 180},${(0.35 + flash * 0.5) * pulse})`);
       grd.addColorStop(1, "rgba(255,60,20,0)");
       ctx.fillStyle = grd;
-      ctx.fillRect(sx - bs.radius * 2.2, sy - bs.radius * 2.2, bs.radius * 4.4, bs.radius * 4.4);
+      ctx.fillRect(sx - bs.radius * 2.8, sy - bs.radius * 2.8, bs.radius * 5.6, bs.radius * 5.6);
       // body
-      ctx.fillStyle = "#1a0505";
+      ctx.fillStyle = flash > 0.05 ? `rgba(${26 + flash * 229},${5 + flash * 250},${5 + flash * 250},1)` : "#1a0505";
       ctx.beginPath(); ctx.arc(sx, sy, bs.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = "#c93030"; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = flash > 0.05 ? "#ffffff" : "#c93030";
+      ctx.lineWidth = 4 + flash * 3;
+      ctx.stroke();
       // spikes
       const now = performance.now() / 500;
       for (let i = 0; i < 8; i++) {
