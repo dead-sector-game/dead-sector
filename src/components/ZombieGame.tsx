@@ -656,6 +656,8 @@ export function ZombieGame() {
       // boss logic
       if (s.bossMode && s.boss) {
         const bs = s.boss;
+        (bs as any).hitFlash = Math.max(0, ((bs as any).hitFlash || 0) - dt * 4);
+        (bs as any).hitShake = Math.max(0, ((bs as any).hitShake || 0) - dt * 40);
         const dx = s.player.x - bs.x, dy = s.player.y - bs.y;
         const d = Math.hypot(dx, dy) || 1;
         let dirX = dx / d, dirY = dy / d;
