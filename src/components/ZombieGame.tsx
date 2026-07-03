@@ -1308,6 +1308,15 @@ export function ZombieGame() {
             )}
           </div>
 
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 font-mono pointer-events-none text-center">
+            <div className="text-[10px] tracking-[0.3em] text-[#8a8a6a]">TIME</div>
+            <div className="text-3xl font-bold tabular-nums text-[#c9a24a] drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+              {formatTime(uiState.elapsedMs)}
+            </div>
+          </div>
+
+
+
           <div className="absolute top-4 right-4 font-mono text-right pointer-events-none">
             <div className="text-2xl font-bold text-[#c9a24a] drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
               {uiState.points} PTS
