@@ -159,10 +159,10 @@ export function ZombieGame() {
     if (s.totems.length === 0) {
       const cx = MAP_W / 2, cy = MAP_H / 2;
       s.totems = [
-        { x: cx - 720, y: cy - 720, kills: 0, need: 20, active: true, id: "NW" },
-        { x: cx + 720, y: cy - 720, kills: 0, need: 20, active: true, id: "NE" },
-        { x: cx - 720, y: cy + 720, kills: 0, need: 20, active: true, id: "SW" },
-        { x: cx + 720, y: cy + 720, kills: 0, need: 20, active: true, id: "SE" },
+        { x: cx - 720, y: cy - 720, kills: 0, need: 10, active: true, id: "NW" },
+        { x: cx + 720, y: cy - 720, kills: 0, need: 10, active: true, id: "NE" },
+        { x: cx - 720, y: cy + 720, kills: 0, need: 10, active: true, id: "SW" },
+        { x: cx + 720, y: cy + 720, kills: 0, need: 10, active: true, id: "SE" },
       ];
     }
 
