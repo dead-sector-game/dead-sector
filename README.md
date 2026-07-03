@@ -13,8 +13,6 @@ Dead Sector is a fast-paced cyberpunk roguelike arcade shooter set inside hostil
 ## Features
 
 - Fast-paced arcade combat
-- Randomized upgrades and builds
-- Cyberpunk aesthetic
 - Branching progression
 - Increasing difficulty across multiple sectors
 - Highly replayable roguelike gameplay
@@ -101,6 +99,7 @@ git push origin feature/my-feature
 - [ ] Additional weapons
 - [ ] More Maps
 - [ ] Accessibility improvements
+- [ ] Settings Modal
 - [ ] Leaderboard (if logged in)
 
 ---
