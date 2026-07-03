@@ -1144,18 +1144,24 @@ export function ZombieGame() {
     function drawBoss() {
       if (!s.boss) return;
       const bs = s.boss;
-      const sx = bs.x - s.camera.x, sy = bs.y - s.camera.y;
+      const flash = (bs as any).hitFlash || 0;
+      const shake = (bs as any).hitShake || 0;
+      const shx = shake ? (Math.random() - 0.5) * shake : 0;
+      const shy = shake ? (Math.random() - 0.5) * shake : 0;
+      const sx = bs.x - s.camera.x + shx, sy = bs.y - s.camera.y + shy;
       const pulse = 0.7 + Math.sin(performance.now() / 200) * 0.3;
-      // aura
-      const grd = ctx.createRadialGradient(sx, sy, bs.radius * 0.5, sx, sy, bs.radius * 2.2);
-      grd.addColorStop(0, `rgba(255,60,20,${0.35 * pulse})`);
+      // aura (brighter when hit)
+      const grd = ctx.createRadialGradient(sx, sy, bs.radius * 0.5, sx, sy, bs.radius * (2.2 + flash * 0.6));
+      grd.addColorStop(0, `rgba(255,${60 + flash * 180},${20 + flash * 180},${(0.35 + flash * 0.5) * pulse})`);
       grd.addColorStop(1, "rgba(255,60,20,0)");
       ctx.fillStyle = grd;
-      ctx.fillRect(sx - bs.radius * 2.2, sy - bs.radius * 2.2, bs.radius * 4.4, bs.radius * 4.4);
+      ctx.fillRect(sx - bs.radius * 2.8, sy - bs.radius * 2.8, bs.radius * 5.6, bs.radius * 5.6);
       // body
-      ctx.fillStyle = "#1a0505";
+      ctx.fillStyle = flash > 0.05 ? `rgba(${26 + flash * 229},${5 + flash * 250},${5 + flash * 250},1)` : "#1a0505";
       ctx.beginPath(); ctx.arc(sx, sy, bs.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = "#c93030"; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = flash > 0.05 ? "#ffffff" : "#c93030";
+      ctx.lineWidth = 4 + flash * 3;
+      ctx.stroke();
       // spikes
       const now = performance.now() / 500;
       for (let i = 0; i < 8; i++) {
