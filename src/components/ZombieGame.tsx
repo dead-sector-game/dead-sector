@@ -34,6 +34,7 @@ const WEAPONS: Record<string, Weapon> = {
 
 const MAP_W = 2000;
 const MAP_H = 2000;
+const BOSS_ARENA_SIZE = 1000;
 
 export function ZombieGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -91,7 +92,7 @@ export function ZombieGame() {
     totemPhase: 0 as 0 | 1 | 2 | 3, // 0=corners, 1=center, 2=transitioning, 3=boss
     transitionFlash: 0,
     bossMode: false,
-    boss: null as null | { x: number; y: number; hp: number; maxHp: number; speed: number; radius: number; lastShot: number },
+    boss: null as null | { x: number; y: number; hp: number; maxHp: number; speed: number; radius: number; lastShot: number; phase: number; lastCharge: number; charging: boolean; chargeDirX: number; chargeDirY: number; chargeTimer: number },
     bossBullets: [] as { x: number; y: number; vx: number; vy: number; life: number; dmg: number }[],
     lava: [] as { x: number; y: number; w: number; h: number }[],
     lastLavaDmg: 0,
@@ -380,10 +381,12 @@ export function ZombieGame() {
       const cy = Math.max(50, Math.min(MAP_H - 50, y));
       let type: Zombie["type"] = "walker";
       const rr = Math.random();
-      if (s.round >= 4 && rr < 0.15) type = "brute";
-      else if (s.round >= 2 && rr < 0.35) type = "runner";
-      let hp = 40 + s.round * 20;
-      let speed = 55 + s.round * 5;
+      if (s.round >= 5 && rr < 0.15) type = "brute";
+      else if (s.round >= 4 && rr < 0.08) type = "brute";
+      else if (s.round >= 3 && rr < 0.22) type = "runner";
+      else if (s.round >= 2 && rr < 0.12) type = "runner";
+      let hp = 30 + s.round * 15;
+      let speed = 50 + s.round * 3;
       let radius = 16;
       if (type === "runner") { hp *= 0.6; speed = 130 + s.round * 6; radius = 13; }
       if (type === "brute") { hp *= 3.5; speed = 45 + s.round * 3; radius = 24; }
@@ -511,6 +514,7 @@ export function ZombieGame() {
 
     function enterBossMap() {
       const cx = MAP_W / 2, cy = MAP_H / 2;
+      const half = BOSS_ARENA_SIZE / 2;
       s.bossMode = true;
       s.totemPhase = 3;
       s.zombies.length = 0;
@@ -518,37 +522,40 @@ export function ZombieGame() {
       s.pickups.length = 0;
       s.zombiesAlive = 0;
       s.zombiesToSpawn = -1;
-      // rock-only obstacles scattered around lava arena
+      // rock-only obstacles scattered around lava arena (smaller arena)
       s.obstacles = [
-        { x: cx - 600, y: cy - 500, w: 110, h: 90, type: "rock" },
-        { x: cx + 500, y: cy - 560, w: 100, h: 80, type: "rock" },
-        { x: cx - 700, y: cy + 300, w: 130, h: 100, type: "rock" },
-        { x: cx + 620, y: cy + 420, w: 120, h: 110, type: "rock" },
-        { x: cx - 300, y: cy - 700, w: 90, h: 80, type: "rock" },
-        { x: cx + 250, y: cy + 660, w: 100, h: 90, type: "rock" },
-        { x: cx - 400, y: cy + 200, w: 80, h: 70, type: "rock" },
-        { x: cx + 380, y: cy - 220, w: 85, h: 75, type: "rock" },
-        { x: cx - 100, y: cy - 400, w: 70, h: 60, type: "rock" },
-        { x: cx + 120, y: cy + 380, w: 90, h: 75, type: "rock" },
+        { x: cx - 300, y: cy - 250, w: 110, h: 90, type: "rock" },
+        { x: cx + 250, y: cy - 280, w: 100, h: 80, type: "rock" },
+        { x: cx - 350, y: cy + 150, w: 130, h: 100, type: "rock" },
+        { x: cx + 310, y: cy + 210, w: 120, h: 110, type: "rock" },
+        { x: cx - 150, y: cy - 350, w: 90, h: 80, type: "rock" },
+        { x: cx + 125, y: cy + 330, w: 100, h: 90, type: "rock" },
+        { x: cx - 200, y: cy + 100, w: 80, h: 70, type: "rock" },
+        { x: cx + 190, y: cy - 110, w: 85, h: 75, type: "rock" },
       ];
-      // lava pools
+      // lava pools (repositioned for smaller arena)
       s.lava = [
-        { x: cx - 260, y: cy - 100, w: 180, h: 90 },
-        { x: cx + 80, y: cy - 60, w: 200, h: 110 },
-        { x: cx - 120, y: cy + 140, w: 240, h: 100 },
-        { x: cx - 550, y: cy + 40, w: 140, h: 200 },
-        { x: cx + 410, y: cy + 120, w: 160, h: 180 },
-        { x: cx - 40, y: cy - 340, w: 220, h: 90 },
+        { x: cx - 130, y: cy - 50, w: 140, h: 70 },
+        { x: cx + 40, y: cy - 30, w: 150, h: 80 },
+        { x: cx - 60, y: cy + 70, w: 160, h: 75 },
+        { x: cx - 350, y: cy + 20, w: 100, h: 140 },
+        { x: cx + 250, y: cy + 60, w: 110, h: 130 },
       ];
       s.totems = [];
       s.player.x = cx;
-      s.player.y = cy + 500;
+      s.player.y = cy + half - 60;
       s.player.hp = Math.min(s.player.maxHp, s.player.hp + 40);
+      // ammo refill box in boss arena
+      s.ammoBoxes = [
+        { x: cx, y: cy + half - 160 },
+      ];
       // boss
       s.boss = {
-        x: cx, y: cy - 500,
+        x: cx, y: cy - half + 60,
         hp: 4000, maxHp: 4000, speed: 70, radius: 42,
         lastShot: performance.now() + 3000,
+        phase: 1, lastCharge: performance.now() + 7000,
+        charging: false, chargeDirX: 0, chargeDirY: 0, chargeTimer: 0,
       };
       setMessage("BOSS: THE HARBINGER", 3000);
       setUiState((u) => ({ ...u, round: 999, zombiesLeft: 1, hp: s.player.hp }));
@@ -571,6 +578,13 @@ export function ZombieGame() {
       (s as any)._resolveObstacles(s.player, s.player.r);
       s.player.y = Math.max(20, Math.min(MAP_H - 20, s.player.y + my * sp));
       (s as any)._resolveObstacles(s.player, s.player.r);
+      // boss arena bounds
+      if (s.bossMode) {
+        const cx = MAP_W / 2, cy = MAP_H / 2;
+        const half = BOSS_ARENA_SIZE / 2 - s.player.r;
+        s.player.x = Math.max(cx - half, Math.min(cx + half, s.player.x));
+        s.player.y = Math.max(cy - half, Math.min(cy + half, s.player.y));
+      }
 
       // world mouse
       s.mouse.worldX = s.mouse.x + s.camera.x;
@@ -704,46 +718,112 @@ export function ZombieGame() {
         const bs = s.boss;
         (bs as any).hitFlash = Math.max(0, ((bs as any).hitFlash || 0) - dt * 4);
         (bs as any).hitShake = Math.max(0, ((bs as any).hitShake || 0) - dt * 40);
-        const dx = s.player.x - bs.x, dy = s.player.y - bs.y;
-        const d = Math.hypot(dx, dy) || 1;
-        let dirX = dx / d, dirY = dy / d;
-        const look = bs.radius + 40;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          let blocker: typeof s.obstacles[number] | null = null;
-          const tx = bs.x + dirX * look, ty = bs.y + dirY * look;
-          for (const o of s.obstacles) {
-            if (circleRectOverlap(tx, ty, bs.radius + 2, o.x, o.y, o.w, o.h)) { blocker = o; break; }
-          }
-          if (!blocker) break;
-          const ocx = blocker.x + blocker.w / 2, ocy = blocker.y + blocker.h / 2;
-          const cross = dirX * (ocy - bs.y) - dirY * (ocx - bs.x);
-          const sign = cross > 0 ? -1 : 1;
-          const ang = sign * (Math.PI / 3);
-          const cs = Math.cos(ang), sn = Math.sin(ang);
-          const nx = dirX * cs - dirY * sn;
-          const ny = dirX * sn + dirY * cs;
-          dirX = nx; dirY = ny;
-        }
-        bs.x += dirX * bs.speed * dt;
-        (s as any)._resolveObstacles(bs, bs.radius);
-        bs.y += dirY * bs.speed * dt;
-        (s as any)._resolveObstacles(bs, bs.radius);
-        if (d < bs.radius + s.player.r) damagePlayer(30);
-        // shoot
         const now = performance.now();
-        if (now - bs.lastShot > 5000) {
-          bs.lastShot = now;
-          const a = Math.atan2(s.player.y - bs.y, s.player.x - bs.x);
-          for (let i = -1; i <= 1; i++) {
-            const aa = a + i * 0.18;
-            s.bossBullets.push({
-              x: bs.x + Math.cos(aa) * bs.radius,
-              y: bs.y + Math.sin(aa) * bs.radius,
-              vx: Math.cos(aa) * 480, vy: Math.sin(aa) * 480,
-              life: 2.2, dmg: 22,
-            });
+
+        // phase transition at 60% HP
+        if (bs.phase === 1 && bs.hp <= bs.maxHp * 0.6) {
+          bs.phase = 2;
+          bs.lastCharge = now + 7000;
+          setMessage("THE HARBINGER ENRAGES!", 2500);
+          s.camera.shake = 12;
+          for (let i = 0; i < 30; i++) {
+            const aa = Math.random() * Math.PI * 2;
+            s.particles.push({ x: bs.x, y: bs.y, vx: Math.cos(aa) * 200, vy: Math.sin(aa) * 200, life: 0.8, maxLife: 0.8, color: Math.random() < 0.5 ? "#ff2200" : "#ffaa00", size: 4 });
           }
-          s.camera.shake = Math.min(s.camera.shake + 6, 16);
+        }
+
+        // sprint attack (phase 2): charge at player for 2s every 7s
+        if (bs.phase === 2 && !bs.charging && now - bs.lastCharge > 7000) {
+          bs.charging = true;
+          bs.chargeTimer = 2.0;
+          s.camera.shake = 8;
+          for (let i = 0; i < 15; i++) {
+            const aa = Math.random() * Math.PI * 2;
+            s.particles.push({ x: bs.x, y: bs.y, vx: Math.cos(aa) * 140, vy: Math.sin(aa) * 140, life: 0.5, maxLife: 0.5, color: "#ff4400", size: 3 });
+          }
+        }
+
+        if (bs.charging) {
+          bs.chargeTimer -= dt;
+          // track player direction each frame during sprint
+          const sdx = s.player.x - bs.x, sdy = s.player.y - bs.y;
+          const sd = Math.hypot(sdx, sdy) || 1;
+          bs.chargeDirX = sdx / sd;
+          bs.chargeDirY = sdy / sd;
+          // sprint toward player at 3.5x speed
+          bs.x += bs.chargeDirX * bs.speed * 3.5 * dt;
+          (s as any)._resolveObstacles(bs, bs.radius);
+          bs.y += bs.chargeDirY * bs.speed * 3.5 * dt;
+          (s as any)._resolveObstacles(bs, bs.radius);
+          // arena bounds
+          const cx = MAP_W / 2, cy = MAP_H / 2, half = BOSS_ARENA_SIZE / 2 - bs.radius;
+          bs.x = Math.max(cx - half, Math.min(cx + half, bs.x));
+          bs.y = Math.max(cy - half, Math.min(cy + half, bs.y));
+          // sprint trail particles
+          if (Math.random() < 0.5) {
+            const aa = Math.random() * Math.PI * 2;
+            s.particles.push({ x: bs.x, y: bs.y, vx: Math.cos(aa) * 80, vy: Math.sin(aa) * 80, life: 0.3, maxLife: 0.3, color: "#ff6600", size: 3 });
+          }
+          // contact damage during sprint
+          const cdx = s.player.x - bs.x, cdy = s.player.y - bs.y;
+          if (cdx * cdx + cdy * cdy < (bs.radius + s.player.r + 10) * (bs.radius + s.player.r + 10)) {
+            damagePlayer(50);
+          }
+          // sprint ends
+          if (bs.chargeTimer <= 0) {
+            bs.charging = false;
+            bs.lastCharge = now;
+          }
+        }
+
+        if (!bs.charging) {
+          const dx = s.player.x - bs.x, dy = s.player.y - bs.y;
+          const d = Math.hypot(dx, dy) || 1;
+          let dirX = dx / d, dirY = dy / d;
+          const look = bs.radius + 40;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            let blocker: typeof s.obstacles[number] | null = null;
+            const tx = bs.x + dirX * look, ty = bs.y + dirY * look;
+            for (const o of s.obstacles) {
+              if (circleRectOverlap(tx, ty, bs.radius + 2, o.x, o.y, o.w, o.h)) { blocker = o; break; }
+            }
+            if (!blocker) break;
+            const ocx = blocker.x + blocker.w / 2, ocy = blocker.y + blocker.h / 2;
+            const cross = dirX * (ocy - bs.y) - dirY * (ocx - bs.x);
+            const sign = cross > 0 ? -1 : 1;
+            const ang = sign * (Math.PI / 3);
+            const cs = Math.cos(ang), sn = Math.sin(ang);
+            const nx = dirX * cs - dirY * sn;
+            const ny = dirX * sn + dirY * cs;
+            dirX = nx; dirY = ny;
+          }
+          bs.x += dirX * bs.speed * dt;
+          (s as any)._resolveObstacles(bs, bs.radius);
+          bs.y += dirY * bs.speed * dt;
+          (s as any)._resolveObstacles(bs, bs.radius);
+          // arena bounds
+          const cx = MAP_W / 2, cy = MAP_H / 2, half = BOSS_ARENA_SIZE / 2 - bs.radius;
+          bs.x = Math.max(cx - half, Math.min(cx + half, bs.x));
+          bs.y = Math.max(cy - half, Math.min(cy + half, bs.y));
+          if (d < bs.radius + s.player.r) damagePlayer(bs.phase === 2 ? 40 : 30);
+          // shoot
+          const shootInterval = bs.phase === 2 ? 3500 : 5000;
+          if (now - bs.lastShot > shootInterval) {
+            bs.lastShot = now;
+            const a = Math.atan2(s.player.y - bs.y, s.player.x - bs.x);
+            const bulletCount = bs.phase === 2 ? 5 : 3;
+            const spread = bs.phase === 2 ? 0.14 : 0.18;
+            for (let i = -(bulletCount - 1) / 2; i <= (bulletCount - 1) / 2; i++) {
+              const aa = a + i * spread;
+              s.bossBullets.push({
+                x: bs.x + Math.cos(aa) * bs.radius,
+                y: bs.y + Math.sin(aa) * bs.radius,
+                vx: Math.cos(aa) * (bs.phase === 2 ? 540 : 480), vy: Math.sin(aa) * (bs.phase === 2 ? 540 : 480),
+                life: 2.2, dmg: bs.phase === 2 ? 26 : 22,
+              });
+            }
+            s.camera.shake = Math.min(s.camera.shake + 6, 16);
+          }
         }
         // player bullets vs boss
         for (let i = s.bullets.length - 1; i >= 0; i--) {
@@ -956,6 +1036,30 @@ export function ZombieGame() {
         const sx = a.x - s.camera.x, sy = a.y - s.camera.y;
         ctx.fillStyle = "#1a2a1a";
         ctx.strokeStyle = "#4a7c3a";
+        ctx.lineWidth = 3;
+        ctx.fillRect(sx - 30, sy - 30, 60, 60);
+        ctx.strokeRect(sx - 30, sy - 30, 60, 60);
+        ctx.fillStyle = "#4a7c3a";
+        ctx.font = "bold 11px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("AMMO", sx, sy - 3);
+        ctx.fillText("500", sx, sy + 12);
+        const dx = a.x - s.player.x, dy = a.y - s.player.y;
+        if (dx * dx + dy * dy < 100 * 100) {
+          ctx.fillStyle = "#fff";
+          ctx.font = "bold 12px monospace";
+          ctx.fillText("[E] REFILL", sx, sy - 45);
+        }
+      }
+    }
+
+    function drawBossAmmoBoxes() {
+      for (const a of s.ammoBoxes) {
+        const sx = a.x - s.camera.x, sy = a.y - s.camera.y;
+        if (sx < -80 || sy < -80 || sx > canvas.width + 80 || sy > canvas.height + 80) continue;
+        const pulse = 0.7 + Math.sin(performance.now() / 300) * 0.3;
+        ctx.fillStyle = "#1a2a1a";
+        ctx.strokeStyle = `rgba(74,124,58,${pulse})`;
         ctx.lineWidth = 3;
         ctx.fillRect(sx - 30, sy - 30, 60, 60);
         ctx.strokeRect(sx - 30, sy - 30, 60, 60);
@@ -1319,50 +1423,62 @@ export function ZombieGame() {
       const shy = shake ? (Math.random() - 0.5) * shake : 0;
       const sx = bs.x - s.camera.x + shx, sy = bs.y - s.camera.y + shy;
       const pulse = 0.7 + Math.sin(performance.now() / 200) * 0.3;
-      // aura (brighter when hit)
-      const grd = ctx.createRadialGradient(sx, sy, bs.radius * 0.5, sx, sy, bs.radius * (2.2 + flash * 0.6));
-      grd.addColorStop(0, `rgba(255,${60 + flash * 180},${20 + flash * 180},${(0.35 + flash * 0.5) * pulse})`);
-      grd.addColorStop(1, "rgba(255,60,20,0)");
+      const p2 = bs.phase === 2;
+      // sprint glow
+      if (bs.charging) {
+        const sprintPulse = 0.5 + Math.sin(performance.now() / 60) * 0.5;
+        ctx.fillStyle = `rgba(255,80,0,${sprintPulse * 0.5})`;
+        ctx.beginPath(); ctx.arc(sx, sy, bs.radius * (2 + sprintPulse), 0, Math.PI * 2); ctx.fill();
+      }
+      // aura (brighter when hit, bigger/redder in phase 2)
+      const auraSize = p2 ? 2.8 : 2.2;
+      const grd = ctx.createRadialGradient(sx, sy, bs.radius * 0.5, sx, sy, bs.radius * (auraSize + flash * 0.6));
+      const gR = p2 ? 200 : 60;
+      grd.addColorStop(0, `rgba(255,${gR + flash * 180},${20 + flash * 180},${((p2 ? 0.5 : 0.35) + flash * 0.5) * pulse})`);
+      grd.addColorStop(1, `rgba(255,${p2 ? 30 : 60},20,0)`);
       ctx.fillStyle = grd;
-      ctx.fillRect(sx - bs.radius * 2.8, sy - bs.radius * 2.8, bs.radius * 5.6, bs.radius * 5.6);
+      ctx.fillRect(sx - bs.radius * 3.2, sy - bs.radius * 3.2, bs.radius * 6.4, bs.radius * 6.4);
       // body
-      ctx.fillStyle = flash > 0.05 ? `rgba(${26 + flash * 229},${5 + flash * 250},${5 + flash * 250},1)` : "#1a0505";
+      const bodyR = p2 ? 36 : 26;
+      ctx.fillStyle = flash > 0.05 ? `rgba(${bodyR + flash * 229},${5 + flash * 250},${5 + flash * 250},1)` : (p2 ? "#2a0505" : "#1a0505");
       ctx.beginPath(); ctx.arc(sx, sy, bs.radius, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = flash > 0.05 ? "#ffffff" : "#c93030";
-      ctx.lineWidth = 4 + flash * 3;
+      ctx.strokeStyle = flash > 0.05 ? "#ffffff" : (p2 ? "#ff2020" : "#c93030");
+      ctx.lineWidth = 4 + flash * 3 + (p2 ? 2 : 0);
       ctx.stroke();
-      // spikes
-      const now = performance.now() / 500;
-      for (let i = 0; i < 8; i++) {
-        const a = (i / 8) * Math.PI * 2 + now;
-        ctx.fillStyle = "#5a0a0a";
+      // spikes (more/bigger in phase 2)
+      const now = performance.now() / (p2 ? 350 : 500);
+      const spikeCount = p2 ? 12 : 8;
+      const spikeLen = p2 ? 18 : 12;
+      for (let i = 0; i < spikeCount; i++) {
+        const a = (i / spikeCount) * Math.PI * 2 + now;
+        ctx.fillStyle = p2 ? "#8a0a0a" : "#5a0a0a";
         ctx.beginPath();
         ctx.moveTo(sx + Math.cos(a) * bs.radius, sy + Math.sin(a) * bs.radius);
-        ctx.lineTo(sx + Math.cos(a + 0.2) * (bs.radius + 12), sy + Math.sin(a + 0.2) * (bs.radius + 12));
-        ctx.lineTo(sx + Math.cos(a + 0.4) * bs.radius, sy + Math.sin(a + 0.4) * bs.radius);
+        ctx.lineTo(sx + Math.cos(a + 0.15) * (bs.radius + spikeLen), sy + Math.sin(a + 0.15) * (bs.radius + spikeLen));
+        ctx.lineTo(sx + Math.cos(a + 0.3) * bs.radius, sy + Math.sin(a + 0.3) * bs.radius);
         ctx.closePath(); ctx.fill();
       }
-      // eyes
-      ctx.fillStyle = `rgba(255,220,80,${pulse})`;
+      // eyes (red in phase 2)
+      ctx.fillStyle = p2 ? `rgba(255,60,20,${pulse})` : `rgba(255,220,80,${pulse})`;
       const ang = Math.atan2(s.player.y - bs.y, s.player.x - bs.x);
       const ex = Math.cos(ang) * (bs.radius * 0.4);
       const ey = Math.sin(ang) * (bs.radius * 0.4);
       const perpX = -Math.sin(ang) * 10, perpY = Math.cos(ang) * 10;
       ctx.beginPath();
-      ctx.arc(sx + ex + perpX, sy + ey + perpY, 4, 0, Math.PI * 2);
-      ctx.arc(sx + ex - perpX, sy + ey - perpY, 4, 0, Math.PI * 2);
+      ctx.arc(sx + ex + perpX, sy + ey + perpY, p2 ? 5 : 4, 0, Math.PI * 2);
+      ctx.arc(sx + ex - perpX, sy + ey - perpY, p2 ? 5 : 4, 0, Math.PI * 2);
       ctx.fill();
       // hp bar (large, top of screen)
       const barW = Math.min(600, canvas.width - 200);
       const barX = (canvas.width - barW) / 2;
       ctx.fillStyle = "rgba(0,0,0,0.7)";
       ctx.fillRect(barX - 4, 46, barW + 8, 22);
-      ctx.fillStyle = "#3a0505";
+      ctx.fillStyle = p2 ? "#5a0505" : "#3a0505";
       ctx.fillRect(barX, 50, barW, 14);
-      ctx.fillStyle = "#c93030";
+      ctx.fillStyle = p2 ? "#ff2020" : "#c93030";
       ctx.fillRect(barX, 50, barW * (bs.hp / bs.maxHp), 14);
       ctx.fillStyle = "#e0c090"; ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
-      ctx.fillText("THE HARBINGER", canvas.width / 2, 44);
+      ctx.fillText(p2 ? "THE HARBINGER - ENRAGED" : "THE HARBINGER", canvas.width / 2, 44);
     }
 
     function drawBossBullets() {
@@ -1390,6 +1506,7 @@ export function ZombieGame() {
       drawMapBounds();
       if (s.bossMode) drawLava();
       if (!s.bossMode) drawBuyStations();
+      else drawBossAmmoBoxes();
       drawPickups();
       drawObstacles();
       drawTotems();
