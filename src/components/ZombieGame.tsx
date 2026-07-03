@@ -50,6 +50,7 @@ export function ZombieGame() {
     gameOver: false,
     started: false,
     message: "",
+    elapsedMs: 0,
   });
   const [showHelp, setShowHelp] = useState(true);
 
@@ -101,6 +102,8 @@ export function ZombieGame() {
     gameOver: false,
     lastTime: 0,
     round0Started: false,
+    startTime: 0,
+    endTime: 0,
   });
 
   useEffect(() => {
@@ -262,7 +265,9 @@ export function ZombieGame() {
       s.started = true;
       s.mouse.down = false;
       s.lastShot = performance.now();
-      setUiState((u) => ({ ...u, started: true }));
+      s.startTime = performance.now();
+      s.endTime = 0;
+      setUiState((u) => ({ ...u, started: true, elapsedMs: 0 }));
       setShowHelp(false);
       startRound(1);
     }
@@ -1258,6 +1263,31 @@ export function ZombieGame() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!uiState.started) return;
+    const s = stateRef.current;
+    let raf = 0;
+    const tick = () => {
+      if (s.gameOver) {
+        if (!s.endTime) s.endTime = performance.now();
+        setUiState((u) => ({ ...u, elapsedMs: s.endTime - s.startTime }));
+        return;
+      }
+      setUiState((u) => ({ ...u, elapsedMs: performance.now() - s.startTime }));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [uiState.started, uiState.gameOver]);
+
+  const formatTime = (ms: number) => {
+    const total = Math.max(0, Math.floor(ms));
+    const m = Math.floor(total / 60000);
+    const sec = Math.floor((total % 60000) / 1000);
+    const cs = Math.floor((total % 1000) / 10);
+    return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}.${String(cs).padStart(2, "0")}`;
+  };
+
   const restart = () => window.location.reload();
 
   return (
@@ -1277,6 +1307,15 @@ export function ZombieGame() {
               </div>
             )}
           </div>
+
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 font-mono pointer-events-none text-center">
+            <div className="text-[10px] tracking-[0.3em] text-[#8a8a6a]">TIME</div>
+            <div className="text-3xl font-bold tabular-nums text-[#c9a24a] drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
+              {formatTime(uiState.elapsedMs)}
+            </div>
+          </div>
+
+
 
           <div className="absolute top-4 right-4 font-mono text-right pointer-events-none">
             <div className="text-2xl font-bold text-[#c9a24a] drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)]">
@@ -1371,6 +1410,9 @@ export function ZombieGame() {
               </>
             )}
             <p className="text-[#8a8a6a] mt-1">{uiState.points} TOTAL POINTS</p>
+            <p className="text-[#c9a24a] mt-2 text-2xl font-bold tabular-nums tracking-widest">
+              TIME {formatTime(uiState.elapsedMs)}
+            </p>
             <button
               onClick={restart}
               className="mt-10 px-10 py-3 bg-[#c9a24a] text-black font-bold tracking-widest hover:bg-[#e0b85a] transition-colors"
