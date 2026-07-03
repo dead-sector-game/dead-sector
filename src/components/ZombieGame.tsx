@@ -424,6 +424,16 @@ export function ZombieGame() {
         });
       }
       s.camera.shake = Math.min(s.camera.shake + 3, 12);
+      s.muzzleFlash = 1;
+      // eject shell casing
+      const perpA = baseAngle + Math.PI / 2;
+      s.particles.push({
+        x: s.player.x + Math.cos(baseAngle) * 6,
+        y: s.player.y + Math.sin(baseAngle) * 6,
+        vx: Math.cos(perpA) * 90 + (Math.random() - 0.5) * 40,
+        vy: Math.sin(perpA) * 90 + (Math.random() - 0.5) * 40,
+        life: 0.6, maxLife: 0.6, color: "#d4b060", size: 2,
+      });
       syncWeaponUi();
     }
 
