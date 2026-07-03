@@ -1,6 +1,6 @@
 # Dead Sector
 
-> A cyberpunk roguelike arcade shooter where every run is different.
+> A roguelike arcade shooter meets black ops zombies.
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
