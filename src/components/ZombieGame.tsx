@@ -128,12 +128,12 @@ export function ZombieGame() {
         { x: cx + 50, y: cy + 122, w: 90, h: 18, type: "fence" },
         { x: cx - 158, y: cy - 90, w: 18, h: 180, type: "fence" },
         { x: cx + 140, y: cy - 90, w: 18, h: 180, type: "fence" },
-        // crate stacks near buy stations
-        { x: cx - 380, y: cy - 240, w: 46, h: 46, type: "crate" },
-        { x: cx - 340, y: cy - 200, w: 40, h: 40, type: "crate" },
+        // crate stacks near buy stations (spaced to avoid overlap with 80x80 buy stations)
+        { x: cx - 430, y: cy - 260, w: 46, h: 46, type: "crate" },
+        { x: cx - 350, y: cy - 170, w: 40, h: 40, type: "crate" },
         { x: cx + 340, y: cy - 240, w: 46, h: 46, type: "crate" },
-        { x: cx + 320, y: cy + 220, w: 44, h: 44, type: "crate" },
-        { x: cx - 360, y: cy + 240, w: 50, h: 50, type: "crate" },
+        { x: cx + 370, y: cy + 220, w: 44, h: 44, type: "crate" },
+        { x: cx - 410, y: cy + 240, w: 50, h: 50, type: "crate" },
         // rocks scattered
         { x: cx - 620, y: cy - 100, w: 80, h: 70, type: "rock" },
         { x: cx + 560, y: cy + 80, w: 90, h: 80, type: "rock" },
@@ -155,8 +155,8 @@ export function ZombieGame() {
         { x: cx + 450, y: cy - 480, w: 28, h: 28, type: "barrel" },
         { x: cx - 480, y: cy + 460, w: 28, h: 28, type: "barrel" },
         { x: cx + 470, y: cy + 490, w: 28, h: 28, type: "barrel" },
-        { x: cx - 250, y: cy + 340, w: 28, h: 28, type: "barrel" },
-        { x: cx + 260, y: cy - 340, w: 28, h: 28, type: "barrel" },
+        { x: cx - 250, y: cy + 370, w: 28, h: 28, type: "barrel" },
+        { x: cx + 280, y: cy - 380, w: 28, h: 28, type: "barrel" },
         // outer wall crates
         { x: cx - 850, y: cy + 750, w: 60, h: 60, type: "crate" },
         { x: cx + 820, y: cy - 780, w: 60, h: 60, type: "crate" },
@@ -522,23 +522,13 @@ export function ZombieGame() {
       s.pickups.length = 0;
       s.zombiesAlive = 0;
       s.zombiesToSpawn = -1;
-      // rock-only obstacles scattered around lava arena (smaller arena)
-      s.obstacles = [
-        { x: cx - 300, y: cy - 250, w: 110, h: 90, type: "rock" },
-        { x: cx + 250, y: cy - 280, w: 100, h: 80, type: "rock" },
-        { x: cx - 350, y: cy + 150, w: 130, h: 100, type: "rock" },
-        { x: cx + 310, y: cy + 210, w: 120, h: 110, type: "rock" },
-        { x: cx - 150, y: cy - 350, w: 90, h: 80, type: "rock" },
-        { x: cx + 125, y: cy + 330, w: 100, h: 90, type: "rock" },
-        { x: cx - 200, y: cy + 100, w: 80, h: 70, type: "rock" },
-        { x: cx + 190, y: cy - 110, w: 85, h: 75, type: "rock" },
-      ];
+      s.obstacles = [];
       // lava pools (repositioned for smaller arena)
       s.lava = [
         { x: cx - 130, y: cy - 50, w: 140, h: 70 },
         { x: cx + 40, y: cy - 30, w: 150, h: 80 },
         { x: cx - 60, y: cy + 70, w: 160, h: 75 },
-        { x: cx - 350, y: cy + 20, w: 100, h: 140 },
+        { x: cx - 350, y: cy - 120, w: 100, h: 120 },
         { x: cx + 250, y: cy + 60, w: 110, h: 130 },
       ];
       s.totems = [];
@@ -1003,9 +993,49 @@ export function ZombieGame() {
     }
 
     function drawMapBounds() {
-      ctx.strokeStyle = "#3a2a1a";
-      ctx.lineWidth = 8;
-      ctx.strokeRect(-s.camera.x, -s.camera.y, MAP_W, MAP_H);
+      if (s.bossMode) {
+        const cx = MAP_W / 2 - s.camera.x, cy = MAP_H / 2 - s.camera.y;
+        const arenaHalf = BOSS_ARENA_SIZE / 2;
+        const wallHalfX = MAP_W / 2;
+        const wallHalfY = MAP_H / 2;
+        const cliffW = 55;
+        // outer map border
+        ctx.strokeStyle = "#1a0e05";
+        ctx.lineWidth = 6;
+        ctx.strokeRect(-s.camera.x, -s.camera.y, MAP_W, MAP_H);
+        // cliff faces — four sides
+        const sides: [number, number, number, number][] = [
+          // top: from arena top edge upward to wall
+          [cx - wallHalfX, cy - wallHalfY, wallHalfX * 2, cliffW],
+          // bottom
+          [cx - wallHalfX, cy + arenaHalf - cliffW + arenaHalf * 0, wallHalfX * 2, cliffW],
+          // left
+          [cx - wallHalfX, cy - arenaHalf, cliffW, arenaHalf * 2],
+          // right
+          [cx + arenaHalf - cliffW, cy - arenaHalf, cliffW, arenaHalf * 2],
+        ];
+        // dark cliff face fill
+        for (const [rx, ry, rw, rh] of sides) {
+          const grd = ctx.createLinearGradient(rx, ry, rx + rw, ry + rh);
+          grd.addColorStop(0, "#1a0e05");
+          grd.addColorStop(0.5, "#2a1a0a");
+          grd.addColorStop(1, "#1a0e05");
+          ctx.fillStyle = grd;
+          ctx.fillRect(rx, ry, rw, rh);
+        }
+        // inner cliff lip highlight (arena edge)
+        ctx.strokeStyle = "#4a3a20";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(cx - arenaHalf, cy - arenaHalf, arenaHalf * 2, arenaHalf * 2);
+        // outer cliff edge shadow
+        ctx.strokeStyle = "#0d0702";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cx - wallHalfX, cy - wallHalfY, wallHalfX * 2, wallHalfY * 2);
+      } else {
+        ctx.strokeStyle = "#3a2a1a";
+        ctx.lineWidth = 8;
+        ctx.strokeRect(-s.camera.x, -s.camera.y, MAP_W, MAP_H);
+      }
     }
 
     function drawBuyStations() {
