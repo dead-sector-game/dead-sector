@@ -866,7 +866,23 @@ export function ZombieGame() {
     }
 
     function drawGrid() {
-      ctx.strokeStyle = "#1a1f1a";
+      // dirt patches (parallax-free, world-anchored)
+      if (!s.bossMode) {
+        const vx0 = s.camera.x, vy0 = s.camera.y, vx1 = vx0 + canvas.width, vy1 = vy0 + canvas.height;
+        for (const p of s.dirtPatches) {
+          if (p.x + p.r < vx0 || p.y + p.r < vy0 || p.x - p.r > vx1 || p.y - p.r > vy1) continue;
+          ctx.fillStyle = p.c;
+          ctx.beginPath();
+          ctx.arc(p.x - s.camera.x, p.y - s.camera.y, p.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        for (const g of s.grassTufts) {
+          if (g.x < vx0 - 4 || g.y < vy0 - 4 || g.x > vx1 + 4 || g.y > vy1 + 4) continue;
+          ctx.fillStyle = g.c;
+          ctx.fillRect(g.x - s.camera.x, g.y - s.camera.y, 3, 3);
+        }
+      }
+      ctx.strokeStyle = s.bossMode ? "#2a0808" : "#1a1f1a";
       ctx.lineWidth = 1;
       const step = 100;
       const startX = Math.floor(s.camera.x / step) * step;
@@ -883,6 +899,27 @@ export function ZombieGame() {
         ctx.lineTo(canvas.width, y - s.camera.y);
         ctx.stroke();
       }
+    }
+
+    function drawDecals() {
+      for (const d of s.decals) {
+        const sx = d.x - s.camera.x, sy = d.y - s.camera.y;
+        if (sx + d.r < 0 || sy + d.r < 0 || sx - d.r > canvas.width || sy - d.r > canvas.height) continue;
+        ctx.globalAlpha = d.alpha;
+        ctx.fillStyle = d.color;
+        ctx.beginPath();
+        ctx.arc(sx, sy, d.r * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        // splatter dots
+        for (let i = 0; i < 4; i++) {
+          const a = (i / 4) * Math.PI * 2 + d.r;
+          const rr = d.r * (0.7 + ((i * 37) % 10) / 30);
+          ctx.beginPath();
+          ctx.arc(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr, 3 + (i % 2), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
     }
 
     function drawMapBounds() {
