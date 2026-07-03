@@ -456,6 +456,9 @@ export function ZombieGame() {
       s.zombiesAlive--;
       const pts = (z.type === "brute" ? 200 : z.type === "runner" ? 80 : 60) + (headshot ? 30 : 0);
       s.points += pts;
+      // blood decal
+      s.decals.push({ x: z.x, y: z.y, r: z.radius * (1.4 + Math.random() * 0.6), color: "#4a0808", alpha: 0.55, kind: "blood" });
+      if (s.decals.length > 120) s.decals.shift();
       // particles
       for (let i = 0; i < 18; i++) {
         const a = Math.random() * Math.PI * 2;
